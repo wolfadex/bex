@@ -128,6 +128,8 @@ operators : List Char
 operators =
     [ '+'
     , '-'
+    , '*'
+    , '/'
     ]
 
 
@@ -140,8 +142,11 @@ builtins =
     Dict.fromList
         [ ( "+", sumExpr )
         , ( "-", differenceExpr )
+        , ( "*", productExpr )
+        , ( "/", divisionExpr )
         , ( "drop", dropExpr )
         , ( "swap", swapExpr )
+        , ( "dup", dupExpr )
         ]
 
 
@@ -171,6 +176,32 @@ differenceExpr stack =
             BOper (-) :: rest
 
 
+productExpr : BexProgram
+productExpr stack =
+    case stack of
+        (BInt a) :: (BInt b) :: rest ->
+            BInt (a * b) :: rest
+
+        (BInt a) :: rest ->
+            BFunc (\b -> a * b) :: rest
+
+        rest ->
+            BOper (*) :: rest
+
+
+divisionExpr : BexProgram
+divisionExpr stack =
+    case stack of
+        (BInt a) :: (BInt b) :: rest ->
+            BInt (a // b) :: rest
+
+        (BInt a) :: rest ->
+            BFunc (\b -> a // b) :: rest
+
+        rest ->
+            BOper (//) :: rest
+
+
 dropExpr : BexProgram
 dropExpr stack =
     case stack of
@@ -188,4 +219,14 @@ swapExpr stack =
             b :: a :: rest
 
         _ ->
+            stack
+
+
+dupExpr : BexProgram
+dupExpr stack =
+    case stack of
+        a :: rest ->
+            a :: a :: rest
+
+        [] ->
             stack

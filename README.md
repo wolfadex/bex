@@ -22,7 +22,18 @@ or
 
 ### Syntax
 
-The supported syntax is currently positive integers, the operators `+` and `-` as well as the words `drop` and `swap`.
+The syntax is:
+
+| Syntax            | Description                                    |
+| ----------------- | ---------------------------------------------- |
+| positive integers | 0, 1, 2 ...                                    |
+| `+`               | Sum of 2 numbers                               |
+| `-`               | Difference of the top 2 numbers                |
+| `*`               | Product of the top 2 numbers                   |
+| `/`               | Quotient of the top 2 numbers                  |
+| `drop`            | Remove top item on stack                       |
+| `swap`            | Swap the place of the top 2 items on the stack |
+| `dup`             | Duplicate the top item on the stack            |
 
 ### Intro to concatenative programming
 
