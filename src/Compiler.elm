@@ -1,6 +1,6 @@
 port module Compiler exposing (main)
 
-import Bex exposing (BExpr, Context)
+import Bex.Compiler as Bex exposing (BExpr, Context)
 import Dict exposing (Dict)
 import Json.Decode exposing (Decoder)
 import Json.Encode exposing (Value)
@@ -77,6 +77,14 @@ update msg model =
         FileLoaded file ->
             case Json.Decode.decodeValue decodeFile file of
                 Ok ( path, content ) ->
+                    let
+                        parsedBex =
+                            Bex.parse content
+                                |> Debug.log "parsed bex"
+
+                        -- |> Result.map (Bex.eval Bex.init)
+                        -- |> Debug.log "evaled bex"
+                    in
                     ( { model | files = Dict.insert path content model.files }
                     , status ("Loaded " ++ path)
                     )

@@ -1,1 +1,11 @@
-main 1 2 +
+Main exposing
+	main
+
+main
+	1 2 + square dec
+
+dec
+	1 swap -
+
+square
+	dup *
