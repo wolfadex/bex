@@ -1,7 +1,8 @@
 module Bex exposing (BExpr, Context, eval, init, parse, toString)
 
 import Dict exposing (Dict)
-import Parser as P exposing ((|.), (|=), Parser, Step(..))
+import Html.Attributes exposing (reversed)
+import Parser as P exposing ((|.), (|=), Parser, Step(..), Trailing(..))
 import Set
 
 
@@ -11,12 +12,16 @@ type BExpr
     | BOper (Int -> Int -> Int)
 
 
-type alias Env =
-    Dict String BexProgram
+type Env
+    = Env (Dict String BexProgram)
 
 
 type Context
-    = Context { stack : Stack, env : Env }
+    = Context InternalContext
+
+
+type alias InternalContext =
+    { stack : Stack, env : Env }
 
 
 type alias Stack =
@@ -24,7 +29,7 @@ type alias Stack =
 
 
 type alias BexProgram =
-    Stack -> Stack
+    InternalContext -> InternalContext
 
 
 init : Context
@@ -37,10 +42,10 @@ init =
 
 
 eval : Context -> BexProgram -> Context
-eval (Context ({ stack } as ctx)) prog =
-    stack
+eval (Context ctx) prog =
+    ctx
         |> prog
-        |> (\newStack -> Context { ctx | stack = newStack })
+        |> Context
 
 
 
@@ -48,21 +53,33 @@ eval (Context ({ stack } as ctx)) prog =
 
 
 toString : Context -> String
-toString (Context { stack }) =
-    List.map
-        (\expr ->
-            case expr of
-                BInt i ->
-                    String.fromInt i
+toString (Context { stack, env }) =
+    let
+        (Env e) =
+            env
 
-                BFunc _ ->
-                    "<function>"
+        stackStr =
+            List.map
+                (\expr ->
+                    case expr of
+                        BInt i ->
+                            String.fromInt i
 
-                BOper _ ->
-                    "<function>"
-        )
-        stack
-        |> String.join " "
+                        BFunc _ ->
+                            "<function>"
+
+                        BOper _ ->
+                            "<function>"
+                )
+                stack
+                |> String.join " "
+
+        envStr =
+            e
+                |> Dict.keys
+                |> Debug.toString
+    in
+    stackStr ++ "\nEnv:\n" ++ envStr
 
 
 
@@ -100,28 +117,105 @@ parseProgram : Parser BexProgram
 parseProgram =
     P.oneOf
         [ parseBInt
+        , parseDefine
         , parseBFunc
         ]
 
 
 parseBInt : Parser BexProgram
 parseBInt =
-    P.succeed (\i -> \stack -> BInt i :: stack)
-        |= P.int
+    P.succeed (\i -> \({ stack } as ctx) -> { ctx | stack = BInt i :: stack })
+        -- |= P.int
+        |= (P.succeed ()
+                |. P.chompWhile Char.isDigit
+                |> P.getChompedString
+                |> P.andThen
+                    (\str ->
+                        case String.toInt str of
+                            Just i ->
+                                P.succeed i
+
+                            Nothing ->
+                                P.problem "Expected Int"
+                    )
+           )
 
 
 parseBFunc : Parser BexProgram
 parseBFunc =
     P.succeed
         (\name ->
-            Dict.get name builtins
-                |> Maybe.withDefault identity
+            \({ stack, env } as ctx) ->
+                let
+                    (Env e) =
+                        env
+
+                    fn =
+                        Dict.get name e
+                            |> Maybe.withDefault identity
+                in
+                fn ctx
         )
         |= (P.succeed ()
-                |. P.chompIf (\c -> Char.isAlpha c || List.member c operators)
-                |. P.chompWhile ((/=) ' ')
+                |. P.chompIf (\c -> Char.isAlpha c || List.member c operators && c /= '.')
+                |. P.chompWhile (\c -> c /= ' ' && c /= '.')
                 |> P.getChompedString
            )
+
+
+{-|
+
+    def square as dup *.
+    def inc as 1 +.
+    def dec as 1 swap -.
+
+-}
+parseDefine : Parser BexProgram
+parseDefine =
+    P.succeed
+        (\name body ->
+            \({ env } as ctx) ->
+                let
+                    (Env e) =
+                        env
+                in
+                { ctx
+                    | env =
+                        Env <|
+                            case Dict.get name e of
+                                Just _ ->
+                                    e
+
+                                Nothing ->
+                                    Dict.insert
+                                        name
+                                        (List.foldl (<<) identity body)
+                                        e
+                }
+        )
+        |. P.keyword "def"
+        |. P.spaces
+        |= (P.succeed ()
+                |. P.chompIf Char.isAlpha
+                |. P.chompWhile Char.isAlphaNum
+                |> P.getChompedString
+           )
+        |. P.spaces
+        |. P.keyword "as"
+        |. P.spaces
+        |= P.loop [] parseDefBody
+        |. P.symbol "."
+
+
+parseDefBody : List BexProgram -> Parser (Step (List BexProgram) (List BexProgram))
+parseDefBody reverseBody =
+    P.oneOf
+        [ P.succeed (\expr -> Loop (expr :: reverseBody))
+            |. P.spaces
+            |= P.oneOf [ parseBInt, parseBFunc ]
+        , P.succeed ()
+            |> P.map (\_ -> Done (List.reverse reverseBody))
+        ]
 
 
 operators : List Char
@@ -148,85 +242,107 @@ builtins =
         , ( "swap", swapExpr )
         , ( "dup", dupExpr )
         ]
+        |> Env
 
 
 sumExpr : BexProgram
-sumExpr stack =
-    case stack of
-        (BInt a) :: (BInt b) :: rest ->
-            BInt (a + b) :: rest
+sumExpr ({ stack } as ctx) =
+    { ctx
+        | stack =
+            case stack of
+                (BInt a) :: (BInt b) :: rest ->
+                    BInt (a + b) :: rest
 
-        (BInt a) :: rest ->
-            BFunc (\b -> a + b) :: rest
+                (BInt a) :: rest ->
+                    BFunc (\b -> a + b) :: rest
 
-        rest ->
-            BOper (+) :: rest
+                rest ->
+                    BOper (+) :: rest
+    }
 
 
 differenceExpr : BexProgram
-differenceExpr stack =
-    case stack of
-        (BInt a) :: (BInt b) :: rest ->
-            BInt (a - b) :: rest
+differenceExpr ({ stack } as ctx) =
+    { ctx
+        | stack =
+            case stack of
+                (BInt a) :: (BInt b) :: rest ->
+                    BInt (a - b) :: rest
 
-        (BInt a) :: rest ->
-            BFunc (\b -> a - b) :: rest
+                (BInt a) :: rest ->
+                    BFunc (\b -> a - b) :: rest
 
-        rest ->
-            BOper (-) :: rest
+                rest ->
+                    BOper (-) :: rest
+    }
 
 
 productExpr : BexProgram
-productExpr stack =
-    case stack of
-        (BInt a) :: (BInt b) :: rest ->
-            BInt (a * b) :: rest
+productExpr ({ stack } as ctx) =
+    { ctx
+        | stack =
+            case stack of
+                (BInt a) :: (BInt b) :: rest ->
+                    BInt (a * b) :: rest
 
-        (BInt a) :: rest ->
-            BFunc (\b -> a * b) :: rest
+                (BInt a) :: rest ->
+                    BFunc (\b -> a * b) :: rest
 
-        rest ->
-            BOper (*) :: rest
+                rest ->
+                    BOper (*) :: rest
+    }
 
 
 divisionExpr : BexProgram
-divisionExpr stack =
-    case stack of
-        (BInt a) :: (BInt b) :: rest ->
-            BInt (a // b) :: rest
+divisionExpr ({ stack } as ctx) =
+    { ctx
+        | stack =
+            case stack of
+                (BInt a) :: (BInt b) :: rest ->
+                    BInt (a // b) :: rest
 
-        (BInt a) :: rest ->
-            BFunc (\b -> a // b) :: rest
+                (BInt a) :: rest ->
+                    BFunc (\b -> a // b) :: rest
 
-        rest ->
-            BOper (//) :: rest
+                rest ->
+                    BOper (//) :: rest
+    }
 
 
 dropExpr : BexProgram
-dropExpr stack =
-    case stack of
-        _ :: rest ->
-            rest
+dropExpr ({ stack } as ctx) =
+    { ctx
+        | stack =
+            case stack of
+                _ :: rest ->
+                    rest
 
-        [] ->
-            []
+                [] ->
+                    []
+    }
 
 
 swapExpr : BexProgram
-swapExpr stack =
-    case stack of
-        a :: b :: rest ->
-            b :: a :: rest
+swapExpr ({ stack } as ctx) =
+    { ctx
+        | stack =
+            case stack of
+                a :: b :: rest ->
+                    b :: a :: rest
 
-        _ ->
-            stack
+                _ ->
+                    stack
+    }
 
 
 dupExpr : BexProgram
-dupExpr stack =
-    case stack of
-        a :: rest ->
-            a :: a :: rest
+dupExpr ({ stack } as ctx) =
+    { ctx
+        | stack =
+            case stack of
+                a :: rest ->
+                    a :: a :: rest
 
-        [] ->
-            stack
+                [] ->
+                    stack
+    }
