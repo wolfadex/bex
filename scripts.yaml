@@ -1,11 +1,18 @@
 scripts:
-  main-dev:
+  main-repl-dev:
     desc: Run the repl in dev mode
-    cmd: deno run --allow-read --unstable src/runner.ts
+    cmd: deno run --allow-read --unstable src/repl.ts
     watch: true
-  main-debug:
+  main-repl-debug:
     desc: Run the repl in debug mode (no watch)
-    cmd: deno run --allow-read --inspect --unstable src/runner.ts
-  elm-dev:
-    desc: Build elm in dev mode
-    cmd: elm-live src/Main.elm --no-server -- --debug --output=src/elm.js
+    cmd: deno run --allow-read --inspect --unstable src/repl.ts
+  elm-repl-dev:
+    desc: Build elm repl in dev mode
+    cmd: elm-live src/Repl.elm --no-server -- --debug --output=src/elm-repl.js
+  main-compiler-dev:
+    desc: Run the compiler in dev mode
+    cmd: deno run --allow-read --unstable src/compiler.ts
+    watch: true
+  elm-compiler-dev:
+    desc: Build elm compiler in dev mode
+    cmd: elm-live src/Compiler.elm --no-server -- --debug --output=src/elm-compiler.js

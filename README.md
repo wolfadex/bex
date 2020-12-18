@@ -1,6 +1,6 @@
 # Bex
 
-A simple, repl only, [concatenative](https://en.wikipedia.org/wiki/Concatenative_programming_language) programming language for learning and fun.
+A simple, [concatenative](https://en.wikipedia.org/wiki/Concatenative_programming_language) programming language for learning and fun.
 
 ## Use
 
@@ -164,6 +164,6 @@ A basic visual example:
 
 ## Development
 
-[Elm](https://elm-lang.org/) is used for parsing and evaluating the language in the repl. [Deno](https://deno.land/) is used as a minimal clue between Elm and the terminal in the repl.
+[Elm](https://elm-lang.org/) is used for parsing and evaluating the language. [Deno](https://deno.land/) is used as a minimal clue between Elm and the terminal.
 
-Make sure both Elm and Deno are installed, as well as [Velociraptor](https://deno.land/x/velociraptor) which is usd for simplifying running scripts during development. In your terminal run `vr elm-dev` to compile the Elm code on change, and run `vr main-dev` to compile the Deno glue and start the repl.
+Make sure both Elm and Deno are installed, as well as [Velociraptor](https://deno.land/x/velociraptor) which is usd for simplifying running scripts. In your terminal run `vr elm-repl-dev` to compile the Elm code on change, and run `vr main-repl-dev` to compile the Deno glue and start the repl.

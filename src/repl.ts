@@ -1,4 +1,4 @@
-const elmFile = await Deno.readFile("./src/elm.js");
+const elmFile = await Deno.readFile("./src/elm-repl.js");
 const decoder = new TextDecoder("utf8");
 const encoder = new TextEncoder();
 const elmJS = decoder.decode(elmFile);
@@ -8,7 +8,7 @@ globalEval(elmJS);
 
 const buffer = new Uint8Array(1024);
 // @ts-ignore
-const app = globalThis.Elm.Main.init();
+const app = globalThis.Elm.Repl.init();
 
 interface ElmMsg {
   action: string;

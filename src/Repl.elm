@@ -1,4 +1,4 @@
-port module Main exposing (main)
+port module Repl exposing (main)
 
 import Bex exposing (BExpr, Context)
 import Json.Decode exposing (Decoder)
