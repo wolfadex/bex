@@ -1,0 +1,11 @@
+scripts:
+  main-dev:
+    desc: Run the repl in dev mode
+    cmd: deno run --allow-read --unstable src/runner.ts
+    watch: true
+  main-debug:
+    desc: Run the repl in debug mode (no watch)
+    cmd: deno run --allow-read --inspect --unstable src/runner.ts
+  elm-dev:
+    desc: Build elm in dev mode
+    cmd: elm-live src/Main.elm --no-server -- --debug --output=src/elm.js
