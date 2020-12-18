@@ -24,16 +24,23 @@ or
 
 The syntax is:
 
-| Syntax            | Description                                    |
-| ----------------- | ---------------------------------------------- |
-| positive integers | 0, 1, 2 ...                                    |
-| `+`               | Sum of 2 numbers                               |
-| `-`               | Difference of the top 2 numbers                |
-| `*`               | Product of the top 2 numbers                   |
-| `/`               | Quotient of the top 2 numbers                  |
-| `drop`            | Remove top item on stack                       |
-| `swap`            | Swap the place of the top 2 items on the stack |
-| `dup`             | Duplicate the top item on the stack            |
+| Syntax                        | Description                                                                                                                                                                       |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| positive integers             | 0, 1, 2 ...                                                                                                                                                                       |
+| +                             | Sum of 2 numbers                                                                                                                                                                  |
+| -                             | Difference of the top 2 numbers                                                                                                                                                   |
+| \*                            | Product of the top 2 numbers                                                                                                                                                      |
+| /                             | Quotient of the top 2 numbers                                                                                                                                                     |
+| drop                          | Remove top item on stack                                                                                                                                                          |
+| swap                          | Swap the place of the top 2 items on the stack                                                                                                                                    |
+| dup                           | Duplicate the top item on the stack                                                                                                                                               |
+| def **_name_** as **_body_**. | Define your own functions. The **_name_** must be alpha character followed by any number of alphanumeric characters. The **_body_** is a space separated list of other functions. |
+
+#### Examples of using def
+
+- n ^ 2 = `def square as dup *.`
+- increment = `def inc as 1 +.`
+- decrement = `def dec as 1 swap -.`
 
 ### Intro to concatenative programming
 
