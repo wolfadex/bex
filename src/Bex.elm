@@ -165,9 +165,9 @@ parseBFunc =
 
 {-|
 
-    def square as dup *.
-    def inc as 1 +.
-    def dec as 1 swap -.
+    def square dup *
+    def inc 1 +
+    def dec 1 swap -
 
 -}
 parseDefine : Parser BexProgram
@@ -201,10 +201,8 @@ parseDefine =
                 |> P.getChompedString
            )
         |. P.spaces
-        |. P.keyword "as"
-        |. P.spaces
         |= P.loop [] parseDefBody
-        |. P.symbol "."
+        |. P.oneOf [ P.symbol "\n", P.end ]
 
 
 parseDefBody : List BexProgram -> Parser (Step (List BexProgram) (List BexProgram))
