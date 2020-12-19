@@ -1,0 +1,6 @@
+Main exposing
+	main
+
+
+main
+	10 `inc swap dup * swap apply

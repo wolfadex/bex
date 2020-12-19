@@ -1,29 +1,11 @@
-module Bex.Compiler exposing (BExpr, Context, compile, init, parse)
+module Bex.Compiler exposing (Context, compile)
 
+import Bex.Lang exposing (BExpr(..), BexModule, Definition)
 import Dict exposing (Dict)
 import Html.Attributes exposing (reversed)
 import List.Nonempty exposing (Nonempty)
 import Parser as P exposing ((|.), (|=), Parser, Step(..), Trailing(..))
 import Parser.Extra as PE
-
-
-type alias BexModule =
-    { name : String
-    , exposing_ : Nonempty String
-    , definitions : Nonempty Definition
-    }
-
-
-type alias Definition =
-    { name : String
-    , body : Nonempty BExpr
-    }
-
-
-type BExpr
-    = BInt Int
-    | BFunc String
-    | BOper String
 
 
 type alias Env =
@@ -44,14 +26,6 @@ type alias Stack =
 
 type alias BexProgram =
     Stack -> Stack
-
-
-init : Context
-init =
-    Context
-        { stack = []
-        , env = Dict.empty -- builtIns
-        }
 
 
 
@@ -88,9 +62,10 @@ compile ({ name, exposing_, definitions } as mod) =
                 Ok
                     ("(function(scope) {\n'use strict';"
                         ++ "\n// BEGIN CORE\n"
-                        ++ buildInWordsCompiled
+                        ++ builtInWordsCompiled
                         ++ "\n"
                         ++ literalCompiledFunc
+                        ++ quoteCompiledFunc
                         ++ runtimeCompiledFunc name
                         ++ "\n// END CORE\n// BEGIN USER"
                         ++ userDefined
@@ -130,66 +105,78 @@ function Bex_run() {
 
 compileFuncBody : String -> Nonempty BExpr -> String
 compileFuncBody moduleName =
-    List.Nonempty.map
-        (\word ->
-            case word of
-                BInt i ->
-                    buildNamespace
-                        { user = "wolfadex"
-                        , package = "bex"
-                        , function = "Core__literal_int"
-                        }
-                        ++ "("
-                        ++ String.fromInt i
-                        ++ ")"
-
-                BOper op ->
-                    case op of
-                        "+" ->
-                            buildNamespace
-                                { user = "wolfadex"
-                                , package = "bex"
-                                , function = "Core__operator_add"
-                                }
-
-                        "-" ->
-                            buildNamespace
-                                { user = "wolfadex"
-                                , package = "bex"
-                                , function = "Core__operator_subtract"
-                                }
-
-                        "*" ->
-                            buildNamespace
-                                { user = "wolfadex"
-                                , package = "bex"
-                                , function = "Core__operator_times"
-                                }
-
-                        "/" ->
-                            buildNamespace
-                                { user = "wolfadex"
-                                , package = "bex"
-                                , function = "Core__operator_divide"
-                                }
-
-                        _ ->
-                            "(a) => a"
-
-                BFunc wd ->
-                    buildNamespace
-                        { user = "wolfadex"
-                        , package = "bex"
-                        , function = String.replace "." "__" wd
-                        }
-        )
+    List.Nonempty.map (compileFunc moduleName)
         >> List.Nonempty.toList
         >> String.join ", "
         >> (\toReduce -> "  return [" ++ toReduce ++ "].reduce((acc, f) => f(acc), stack);")
 
 
-buildInWordsCompiled : String
-buildInWordsCompiled =
+compileFunc : String -> BExpr -> String
+compileFunc moduleName expr =
+    case expr of
+        BInt i ->
+            buildNamespace
+                { user = "wolfadex"
+                , package = "bex"
+                , function = "Core__literal_int"
+                }
+                ++ "("
+                ++ String.fromInt i
+                ++ ")"
+
+        BQuote quotedExpr ->
+            buildNamespace
+                { user = "wolfadex"
+                , package = "bex"
+                , function = "Core__quote"
+                }
+                ++ "("
+                ++ compileFunc moduleName quotedExpr
+                ++ ")"
+
+        BOper op ->
+            case op of
+                "+" ->
+                    buildNamespace
+                        { user = "wolfadex"
+                        , package = "bex"
+                        , function = "Core__operator_add"
+                        }
+
+                "-" ->
+                    buildNamespace
+                        { user = "wolfadex"
+                        , package = "bex"
+                        , function = "Core__operator_subtract"
+                        }
+
+                "*" ->
+                    buildNamespace
+                        { user = "wolfadex"
+                        , package = "bex"
+                        , function = "Core__operator_times"
+                        }
+
+                "/" ->
+                    buildNamespace
+                        { user = "wolfadex"
+                        , package = "bex"
+                        , function = "Core__operator_divide"
+                        }
+
+                _ ->
+                    "(a) => a"
+
+        BFunc wd ->
+            buildNamespace
+                { user = "wolfadex"
+                , package = "bex"
+                , function = String.replace "." "__" wd
+                }
+
+
+builtInWordsCompiled : String
+builtInWordsCompiled =
     [ { moduleName = "Core"
       , word = "swap"
       , body = """  const [a, b, ...rest] = stack;
@@ -229,6 +216,11 @@ buildInWordsCompiled =
     return [Math.floor(a / b), ...rest];
   }"""
       }
+    , { moduleName = "Core"
+      , word = "apply"
+      , body = """  const [f, ...rest] = stack;
+  return f(rest);"""
+      }
     ]
         |> List.map createCompiledFunc
         |> String.join "\n"
@@ -258,6 +250,21 @@ literalCompiledFunc =
         ++ """(i) {
   return function(stack) {
     return [i, ...stack];
+  }
+}"""
+
+
+quoteCompiledFunc : String
+quoteCompiledFunc =
+    "function "
+        ++ buildNamespace
+            { user = "wolfadex"
+            , package = "bex"
+            , function = "Core__quote"
+            }
+        ++ """(quotedFn) {
+  return function(stack) {
+    return [quotedFn, ...stack];
   }
 }"""
 
@@ -322,133 +329,3 @@ memberByHelper fn ls =
 
         a :: rest ->
             fn a || memberByHelper fn rest
-
-
-
----- PARSING ----
-
-
-parse : String -> Result String BexModule
-parse =
-    P.run parseModule
-        >> Result.mapError Debug.toString
-
-
-parseModule : Parser BexModule
-parseModule =
-    P.succeed BexModule
-        |= parseModuleName
-        |. PE.oneOrMore (PE.char ' ')
-        |. P.keyword "exposing"
-        |. PE.char '\n'
-        |= PE.oneOrMore parseExposeName
-        |= PE.oneOrMore parseDefinition
-
-
-parseModuleName : Parser String
-parseModuleName =
-    P.succeed ()
-        |. P.chompIf (\c -> Char.isAlpha c && Char.isUpper c)
-        |. P.chompWhile Char.isAlphaNum
-        |> P.getChompedString
-
-
-parseExposeName : Parser String
-parseExposeName =
-    P.succeed identity
-        |. PE.char '\t'
-        |= parseDefinitionName
-        |. PE.char '\n'
-
-
-parseDefinition : Parser Definition
-parseDefinition =
-    P.succeed
-        (\name body ->
-            { name = name
-            , body = List.Nonempty.foldl1 List.Nonempty.append body
-            }
-        )
-        |. PE.oneOrMore (PE.char '\n')
-        |= parseDefinitionName
-        |. PE.char '\n'
-        |= PE.oneOrMore parseDefinitionBodyLine
-
-
-parseDefinitionName : Parser String
-parseDefinitionName =
-    P.succeed ()
-        |. P.chompIf (\c -> Char.isAlpha c && Char.isLower c)
-        |. P.chompWhile Char.isAlphaNum
-        |> P.getChompedString
-
-
-parseDefinitionBodyLine : Parser (Nonempty BExpr)
-parseDefinitionBodyLine =
-    P.succeed identity
-        |. PE.char '\t'
-        |= ([ parseBInt
-            , operators
-                |> List.map parseOperator
-                |> P.oneOf
-            , parseWord
-            ]
-                |> List.map
-                    (\par ->
-                        P.succeed identity
-                            |= par
-                            |. PE.many (PE.char ' ')
-                    )
-                |> P.oneOf
-                |> PE.oneOrMore
-           )
-        |. P.oneOf
-            [ PE.char '\n'
-                |> P.map
-                    (\_ -> ())
-            , P.end
-            ]
-
-
-parseBInt : Parser BExpr
-parseBInt =
-    P.succeed ()
-        |. P.chompWhile Char.isDigit
-        |> P.getChompedString
-        |> P.andThen
-            (\str ->
-                case String.toInt str of
-                    Just i ->
-                        P.succeed (BInt i)
-
-                    Nothing ->
-                        P.problem "Expected Int"
-            )
-
-
-parseOperator : String -> Parser BExpr
-parseOperator op =
-    P.symbol op
-        |> P.map (\() -> BOper op)
-
-
-operators : List String
-operators =
-    [ "+"
-    , "-"
-    , "*"
-    , "/"
-    ]
-
-
-builtinWords : List String
-builtinWords =
-    [ "drop"
-    , "swap"
-    , "dup"
-    ]
-
-
-parseWord : Parser BExpr
-parseWord =
-    P.map BFunc parseDefinitionName
