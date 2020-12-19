@@ -58,6 +58,11 @@ init =
 ---- COMPILE ----
 
 
+buildNamespace : { user : String, package : String, function : String } -> String
+buildNamespace { user, package, function } =
+    String.join "__" [ user, package, function ]
+
+
 compile : BexModule -> Result String String
 compile ({ name, exposing_, definitions } as mod) =
     mod
@@ -74,7 +79,7 @@ compile ({ name, exposing_, definitions } as mod) =
                                     ++ createCompiledFunc
                                         { moduleName = name
                                         , word = defName
-                                        , body = compileFuncBody body
+                                        , body = compileFuncBody name body
                                         }
                             )
                             ""
@@ -113,37 +118,70 @@ runtimeCompiledFunc : String -> String
 runtimeCompiledFunc moduleName =
     """
 function Bex_run() {
-  return Bex__""" ++ moduleName ++ """__main([]);
+  return """
+        ++ buildNamespace
+            { user = "wolfadex"
+            , package = "bex"
+            , function = moduleName ++ "__main"
+            }
+        ++ """([]);
 }"""
 
 
-compileFuncBody : Nonempty BExpr -> String
-compileFuncBody =
+compileFuncBody : String -> Nonempty BExpr -> String
+compileFuncBody moduleName =
     List.Nonempty.map
         (\word ->
             case word of
                 BInt i ->
-                    "Bex__Core__literal_int(" ++ String.fromInt i ++ ")"
+                    buildNamespace
+                        { user = "wolfadex"
+                        , package = "bex"
+                        , function = "Core__literal_int"
+                        }
+                        ++ "("
+                        ++ String.fromInt i
+                        ++ ")"
 
                 BOper op ->
                     case op of
                         "+" ->
-                            "Bex__Core__operator__add"
+                            buildNamespace
+                                { user = "wolfadex"
+                                , package = "bex"
+                                , function = "Core__operator_add"
+                                }
 
                         "-" ->
-                            "Bex__Core__operator__subtract"
+                            buildNamespace
+                                { user = "wolfadex"
+                                , package = "bex"
+                                , function = "Core__operator_subtract"
+                                }
 
                         "*" ->
-                            "Bex__Core__operator__times"
+                            buildNamespace
+                                { user = "wolfadex"
+                                , package = "bex"
+                                , function = "Core__operator_times"
+                                }
 
                         "/" ->
-                            "Bex__Core__operator__divide"
+                            buildNamespace
+                                { user = "wolfadex"
+                                , package = "bex"
+                                , function = "Core__operator_divide"
+                                }
 
                         _ ->
                             "(a) => a"
 
                 BFunc wd ->
-                    "Bex__" ++ String.replace "." "__" wd
+                    buildNamespace
+                        { user = "wolfadex"
+                        , package = "bex"
+                        , function = String.replace "." "__" wd
+                        }
         )
         >> List.Nonempty.toList
         >> String.join ", "
@@ -168,22 +206,22 @@ buildInWordsCompiled =
   return [a, a, ...rest];"""
       }
     , { moduleName = "Core"
-      , word = "operator__add"
+      , word = "operator_add"
       , body = """  const [a, b, ...rest] = stack;
   return [a + b, ...rest];"""
       }
     , { moduleName = "Core"
-      , word = "operator__subtract"
+      , word = "operator_subtract"
       , body = """  const [a, b, ...rest] = stack;
   return [a - b, ...rest];"""
       }
     , { moduleName = "Core"
-      , word = "operator__times"
+      , word = "operator_times"
       , body = """  const [a, b, ...rest] = stack;
   return [a * b, ...rest];"""
       }
     , { moduleName = "Core"
-      , word = "operator__divide"
+      , word = "operator_divide"
       , body = """  const [a, b, ...rest] = stack;
   if (b === 0) {
     return [0, ...rest];
@@ -198,12 +236,26 @@ buildInWordsCompiled =
 
 createCompiledFunc : { moduleName : String, word : String, body : String } -> String
 createCompiledFunc { moduleName, word, body } =
-    "function Bex__" ++ moduleName ++ "__" ++ word ++ "(stack) {\n" ++ body ++ "\n}"
+    "function "
+        ++ buildNamespace
+            { user = "wolfadex"
+            , package = "bex"
+            , function = moduleName ++ "__" ++ word
+            }
+        ++ "(stack) {\n"
+        ++ body
+        ++ "\n}"
 
 
 literalCompiledFunc : String
 literalCompiledFunc =
-    """function Bex__Core__literal_int(i) {
+    "function "
+        ++ buildNamespace
+            { user = "wolfadex"
+            , package = "bex"
+            , function = "Core__literal_int"
+            }
+        ++ """(i) {
   return function(stack) {
     return [i, ...stack];
   }
