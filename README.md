@@ -2,7 +2,7 @@
 
 A simple, [concatenative](https://en.wikipedia.org/wiki/Concatenative_programming_language) programming language for learning and fun.
 
-## Use
+## REPL
 
 Once the repl is up and running, using the instructions below in Development, you can do some basic math.
 
@@ -162,8 +162,54 @@ A basic visual example:
   </tbody>
 </table>
 
+## Compile to JS
+
+A basic `.bex` file has the shape
+
+```
+Main exposing
+	main
+
+main
+	4 2 + square dec
+
+dec
+	1 swap -
+
+square
+	dup *
+```
+
+The first line must be the module name followed by the word exposing. The second+ lines must be tab indented words that are exposed. The entry file is only concerned with the word `main` being exposed.
+
+Defining new words requires less syntax than in the repl. This example contains 3 defined words: `main`, `dec`, and `square`. Defining a new word in Bex must follow exactly:
+
+- a lower case alpha character followed by any number of alphanumeric characters
+- a newline character
+- 1 or more lines of a single tab and space separated words, literals, and operators
+- at least 1 empty line (only a newline character) between each definition
+
+There isn't any support yet for importing other modules.
+
+### Running compiled Bex
+
+Once compiled to JS, Bex code can be either run from the browser or from a Deno or Node like environment. If you compile the above example running it in the browser then do
+
+```html
+<script src="./path/to/bex.js"></script>
+<script>
+  const resultingStack = window.Bex.Main.run();
+</script>
+```
+
+When you do this, `resultingStack` will be the values on the stack after the code has run. In the future Bex will have built in ways to print to the console as well as some form of FFI.
+
 ## Development
 
 [Elm](https://elm-lang.org/) is used for parsing and evaluating the language. [Deno](https://deno.land/) is used as a minimal clue between Elm and the terminal.
 
 Make sure both Elm and Deno are installed, as well as [Velociraptor](https://deno.land/x/velociraptor) which is usd for simplifying running scripts. In your terminal run `vr elm-repl-dev` to compile the Elm code on change, and run `vr main-repl-dev` to compile the Deno glue and start the repl.
+
+```
+
+```

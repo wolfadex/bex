@@ -1,13 +1,14 @@
 port module Compiler exposing (main)
 
-import Bex exposing (BExpr, Context)
+import Bex.Compiler as Bex exposing (BExpr, Context)
+import Dict exposing (Dict)
 import Json.Decode exposing (Decoder)
 import Json.Encode exposing (Value)
 import Platform
 import Result.Extra
 
 
-main : Program () Model Msg
+main : Program Args Model Msg
 main =
     Platform.worker
         { init = init
@@ -21,93 +22,121 @@ main =
 
 
 type alias Model =
-    { context : Context }
+    { files : Dict String String }
+
+
+type alias Args =
+    List String
 
 
 
 ---- INIT ----
 
 
-init : () -> ( Model, Cmd Msg )
-init _ =
-    ( { context = Bex.init }
-    , sendToTS "PROMPT" (Json.Encode.string "> ")
-    )
+init : Args -> ( Model, Cmd Msg )
+init args =
+    case args of
+        [] ->
+            ( { files = Dict.empty }, status "Expected an entry file" )
+
+        entryFilePath :: _ ->
+            ( { files = Dict.empty }
+            , loadFile entryFilePath
+            )
 
 
 
 ---- SUBSCRIPTIONS ----
 
 
-port fromTS : (Value -> msg) -> Sub msg
+port fileLoaded : (Value -> msg) -> Sub msg
 
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    fromTS FromTS
+    fileLoaded FileLoaded
 
 
 
 ---- UPDATE ----
 
 
-port toTS : Value -> Cmd msg
+port status : String -> Cmd msg
 
 
-sendToTS : String -> Value -> Cmd msg
-sendToTS action payload =
-    [ ( "action", Json.Encode.string action )
-    , ( "payload", payload )
-    ]
-        |> Json.Encode.object
-        |> toTS
+port loadFile : String -> Cmd msg
+
+
+port writeFile : Value -> Cmd msg
 
 
 type Msg
-    = FromTS Value
+    = FileLoaded Value
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        FromTS val ->
-            case Json.Decode.decodeValue decodeTSReponse val of
-                Ok ( action, payload ) ->
-                    let
-                        result =
-                            payload
-                                |> Bex.parse
-                                |> Result.map (Bex.eval model.context)
-                    in
-                    ( { model
-                        | context =
-                            result
-                                |> Result.mapError (\_ -> model.context)
-                                |> Result.Extra.merge
-                      }
-                    , result
-                        |> Result.map Bex.toString
+        FileLoaded file ->
+            case Json.Decode.decodeValue decodeFile file of
+                Ok ( path, content ) ->
+                    ( { model | files = Dict.insert path content model.files }
+                    , Bex.parse content
+                        |> Result.andThen Bex.compile
+                        |> Result.map
+                            (\compiledBex ->
+                                [ ( "filePath", Json.Encode.string "./bex.js" )
+                                , ( "content", Json.Encode.string compiledBex )
+                                ]
+                                    |> Json.Encode.object
+                                    |> writeFile
+                            )
+                        |> Result.mapError status
                         |> Result.Extra.merge
-                        |> (\s -> s ++ "\n> ")
-                        |> Json.Encode.string
-                        |> sendToTS "PROMPT"
                     )
 
                 Err err ->
-                    ( model
-                    , Cmd.batch
-                        [ err
-                            |> Json.Decode.errorToString
-                            |> (\e -> e ++ "> ")
-                            |> Json.Encode.string
-                            |> sendToTS "PRINT"
-                        , sendToTS "PROMPT" (Json.Encode.string "> ")
-                        ]
-                    )
+                    Debug.todo "handle file load decode errpr"
 
 
-decodeTSReponse : Decoder ( String, String )
-decodeTSReponse =
+
+-- FromTS val ->
+--     case Json.Decode.decodeValue decodeTSReponse val of
+--         Ok ( action, payload ) ->
+--             let
+--                 result =
+--                     payload
+--                         |> Bex.parse
+--                         |> Result.map (Bex.eval model.context)
+--             in
+--             ( { model
+--                 | context =
+--                     result
+--                         |> Result.mapError (\_ -> model.context)
+--                         |> Result.Extra.merge
+--               }
+--             , result
+--                 |> Result.map Bex.toString
+--                 |> Result.Extra.merge
+--                 |> (\s -> s ++ "\n> ")
+--                 |> Json.Encode.string
+--                 |> sendToTS "PROMPT"
+--             )
+--         Err err ->
+--             ( model
+--             , Cmd.batch
+--                 [ err
+--                     |> Json.Decode.errorToString
+--                     |> (\e -> e ++ "> ")
+--                     |> Json.Encode.string
+--                     |> sendToTS "PRINT"
+--                 , sendToTS "PROMPT" (Json.Encode.string "> ")
+--                 ]
+--             )
+
+
+decodeFile : Decoder ( String, String )
+decodeFile =
     Json.Decode.map2 Tuple.pair
-        (Json.Decode.field "action" Json.Decode.string)
-        (Json.Decode.field "payload" Json.Decode.string)
+        (Json.Decode.field "path" Json.Decode.string)
+        (Json.Decode.field "content" Json.Decode.string)
