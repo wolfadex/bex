@@ -1,4 +1,4 @@
-module Bex.Compiler exposing (BExpr, Context, eval, init, parse, toString)
+module Bex.Compiler exposing (BExpr, Context, compile, init, parse)
 
 import Dict exposing (Dict)
 import Html.Attributes exposing (reversed)
@@ -16,18 +16,18 @@ type alias BexModule =
 
 type alias Definition =
     { name : String
-    , body : Nonempty String
+    , body : Nonempty BExpr
     }
 
 
 type BExpr
     = BInt Int
-    | BFunc (Int -> Int)
-    | BOper (Int -> Int -> Int)
+    | BFunc String
+    | BOper String
 
 
-type Env
-    = Env (Dict String BexProgram)
+type alias Env =
+    Dict String BexProgram
 
 
 type Context
@@ -50,51 +50,226 @@ init : Context
 init =
     Context
         { stack = []
-        , env = Env Dict.empty -- builtins
+        , env = Dict.empty -- builtIns
         }
 
 
 
----- EVAL ----
+---- COMPILE ----
 
 
-eval : Context -> BexProgram -> Context
-eval (Context ctx) prog =
-    Context ctx
+compile : BexModule -> Result String String
+compile ({ name, exposing_, definitions } as mod) =
+    mod
+        |> qualifyNames
+        |> buildGraph
+        |> Result.andThen
+            (\graph ->
+                let
+                    userDefined =
+                        Dict.foldl
+                            (\defName body res ->
+                                res
+                                    ++ "\n"
+                                    ++ createCompiledFunc
+                                        { moduleName = name
+                                        , word = defName
+                                        , body = compileFuncBody body
+                                        }
+                            )
+                            ""
+                            graph
+                in
+                Ok
+                    ("(function(scope) {\n'use strict';"
+                        ++ "\n// BEGIN CORE\n"
+                        ++ buildInWordsCompiled
+                        ++ "\n"
+                        ++ literalCompiledFunc
+                        ++ runtimeCompiledFunc name
+                        ++ "\n// END CORE\n// BEGIN USER"
+                        ++ userDefined
+                        ++ "\n// END USER\n"
+                        ++ exposeRuntime name
+                        ++ "}(this));"
+                    )
+            )
+
+
+exposeRuntime : String -> String
+exposeRuntime moduleName =
+    """
+if (scope['Bex'] == null) {
+  scope['Bex'] = {};
+}
+if (scope['Bex']['""" ++ moduleName ++ """'] == null) {
+  scope['Bex']['""" ++ moduleName ++ """'] = {};
+}
+return scope['Bex']['""" ++ moduleName ++ """']['run'] = Bex_run;
+"""
+
+
+runtimeCompiledFunc : String -> String
+runtimeCompiledFunc moduleName =
+    """
+function Bex_run() {
+  return Bex__""" ++ moduleName ++ """__main([]);
+}"""
+
+
+compileFuncBody : Nonempty BExpr -> String
+compileFuncBody =
+    List.Nonempty.map
+        (\word ->
+            case word of
+                BInt i ->
+                    "Bex__Core__literal_int(" ++ String.fromInt i ++ ")"
+
+                BOper op ->
+                    case op of
+                        "+" ->
+                            "Bex__Core__operator__add"
+
+                        "-" ->
+                            "Bex__Core__operator__subtract"
+
+                        "*" ->
+                            "Bex__Core__operator__times"
+
+                        "/" ->
+                            "Bex__Core__operator__divide"
+
+                        _ ->
+                            "(a) => a"
+
+                BFunc wd ->
+                    "Bex__" ++ String.replace "." "__" wd
+        )
+        >> List.Nonempty.toList
+        >> String.join ", "
+        >> (\toReduce -> "  return [" ++ toReduce ++ "].reduce((acc, f) => f(acc), stack);")
+
+
+buildInWordsCompiled : String
+buildInWordsCompiled =
+    [ { moduleName = "Core"
+      , word = "swap"
+      , body = """  const [a, b, ...rest] = stack;
+  return [b, a, ...rest];"""
+      }
+    , { moduleName = "Core"
+      , word = "drop"
+      , body = """  const [a, b, ...rest] = stack;
+  return [b, a, ...rest];"""
+      }
+    , { moduleName = "Core"
+      , word = "dup"
+      , body = """  const [a, ...rest] = stack;
+  return [a, a, ...rest];"""
+      }
+    , { moduleName = "Core"
+      , word = "operator__add"
+      , body = """  const [a, b, ...rest] = stack;
+  return [a + b, ...rest];"""
+      }
+    , { moduleName = "Core"
+      , word = "operator__subtract"
+      , body = """  const [a, b, ...rest] = stack;
+  return [a - b, ...rest];"""
+      }
+    , { moduleName = "Core"
+      , word = "operator__times"
+      , body = """  const [a, b, ...rest] = stack;
+  return [a * b, ...rest];"""
+      }
+    , { moduleName = "Core"
+      , word = "operator__divide"
+      , body = """  const [a, b, ...rest] = stack;
+  if (b === 0) {
+    return [0, ...rest];
+  } else {
+    return [Math.floor(a / b), ...rest];
+  }"""
+      }
+    ]
+        |> List.map createCompiledFunc
+        |> String.join "\n"
+
+
+createCompiledFunc : { moduleName : String, word : String, body : String } -> String
+createCompiledFunc { moduleName, word, body } =
+    "function Bex__" ++ moduleName ++ "__" ++ word ++ "(stack) {\n" ++ body ++ "\n}"
+
+
+literalCompiledFunc : String
+literalCompiledFunc =
+    """function Bex__Core__literal_int(i) {
+  return function(stack) {
+    return [i, ...stack];
+  }
+}"""
 
 
 
----- PRETTY ----
+---- REDUCE ----
 
 
-toString : Context -> String
-toString (Context { stack, env }) =
-    let
-        (Env e) =
-            env
+buildGraph : Nonempty Definition -> Result String (Dict String (Nonempty BExpr))
+buildGraph =
+    List.Nonempty.foldl
+        (\{ name, body } ->
+            Result.andThen
+                (\env ->
+                    case Dict.get name env of
+                        Nothing ->
+                            Dict.insert name body env |> Ok
 
-        stackStr =
-            List.map
-                (\expr ->
-                    case expr of
-                        BInt i ->
-                            String.fromInt i
-
-                        BFunc _ ->
-                            "<function>"
-
-                        BOper _ ->
-                            "<function>"
+                        Just _ ->
+                            Err ("definition " ++ name ++ " already exists")
                 )
-                stack
-                |> String.join " "
+        )
+        (Ok Dict.empty)
 
-        envStr =
-            e
-                |> Dict.keys
-                |> Debug.toString
-    in
-    stackStr ++ "\nEnv:\n" ++ envStr
+
+qualifyNames : BexModule -> Nonempty Definition
+qualifyNames { name, definitions } =
+    List.Nonempty.map
+        (\({ body } as def) ->
+            { def
+                | body =
+                    List.Nonempty.map
+                        (\word ->
+                            case word of
+                                BFunc wd ->
+                                    BFunc <|
+                                        if memberBy (\d -> d.name == wd) definitions then
+                                            name ++ "." ++ wd
+
+                                        else
+                                            "Core." ++ wd
+
+                                _ ->
+                                    word
+                        )
+                        body
+            }
+        )
+        definitions
+
+
+memberBy : (a -> Bool) -> Nonempty a -> Bool
+memberBy fn =
+    List.Nonempty.toList >> memberByHelper fn
+
+
+memberByHelper : (a -> Bool) -> List a -> Bool
+memberByHelper fn ls =
+    case ls of
+        [] ->
+            False
+
+        a :: rest ->
+            fn a || memberByHelper fn rest
 
 
 
@@ -156,11 +331,11 @@ parseDefinitionName =
         |> P.getChompedString
 
 
-parseDefinitionBodyLine : Parser (Nonempty String)
+parseDefinitionBodyLine : Parser (Nonempty BExpr)
 parseDefinitionBodyLine =
     P.succeed identity
         |. PE.char '\t'
-        |= ([ parseInt |> P.map String.fromInt
+        |= ([ parseBInt
             , operators
                 |> List.map parseOperator
                 |> P.oneOf
@@ -183,8 +358,8 @@ parseDefinitionBodyLine =
             ]
 
 
-parseInt : Parser Int
-parseInt =
+parseBInt : Parser BExpr
+parseBInt =
     P.succeed ()
         |. P.chompWhile Char.isDigit
         |> P.getChompedString
@@ -192,17 +367,17 @@ parseInt =
             (\str ->
                 case String.toInt str of
                     Just i ->
-                        P.succeed i
+                        P.succeed (BInt i)
 
                     Nothing ->
                         P.problem "Expected Int"
             )
 
 
-parseOperator : String -> Parser String
+parseOperator : String -> Parser BExpr
 parseOperator op =
     P.symbol op
-        |> P.map (\() -> op)
+        |> P.map (\() -> BOper op)
 
 
 operators : List String
@@ -214,210 +389,14 @@ operators =
     ]
 
 
-parseWord : Parser String
+builtinWords : List String
+builtinWords =
+    [ "drop"
+    , "swap"
+    , "dup"
+    ]
+
+
+parseWord : Parser BExpr
 parseWord =
-    parseDefinitionName
-
-
-
--- parsePrograms : Parser (List BexProgram)
--- parsePrograms =
---     P.succeed identity
---         |= P.loop [] parseProgramHelper
---         |. P.end
--- parseProgramHelper : List BexProgram -> Parser (Step (List BexProgram) (List BexProgram))
--- parseProgramHelper reversePrograms =
---     P.oneOf
---         [ P.succeed (\e -> Loop (e :: reversePrograms))
---             |. P.spaces
---             |= parseProgram
---             |. P.spaces
---         , P.succeed ()
---             |> P.map (\_ -> Done (List.reverse reversePrograms))
---         ]
--- parseProgram : Parser BexProgram
--- parseProgram =
---     P.oneOf
---         [ parseBInt
---         , parseDefine
---         , parseBFunc
---         ]
--- parseBInt : Parser BexProgram
--- parseBInt =
---     P.succeed (\i -> \({ stack } as ctx) -> { ctx | stack = BInt i :: stack })
---         -- |= P.int
---         |= (P.succeed ()
---                 |. P.chompWhile Char.isDigit
---                 |> P.getChompedString
---                 |> P.andThen
---                     (\str ->
---                         case String.toInt str of
---                             Just i ->
---                                 P.succeed i
---                             Nothing ->
---                                 P.problem "Expected Int"
---                     )
---            )
--- parseBFunc : Parser BexProgram
--- parseBFunc =
---     P.succeed
---         (\name ->
---             \({ stack, env } as ctx) ->
---                 let
---                     (Env e) =
---                         env
---                     fn =
---                         Dict.get name e
---                             |> Maybe.withDefault identity
---                 in
---                 fn ctx
---         )
---         |= (P.succeed ()
---                 |. P.chompIf (\c -> Char.isAlpha c || List.member c operators && c /= '.')
---                 |. P.chompWhile (\c -> c /= ' ' && c /= '.')
---                 |> P.getChompedString
---            )
--- {-|
---     def square dup *
---     def inc 1 +
---     def dec 1 swap -
--- -}
--- parseDefine : Parser BexProgram
--- parseDefine =
---     P.succeed
---         (\name body ->
---             \({ env } as ctx) ->
---                 let
---                     (Env e) =
---                         env
---                 in
---                 { ctx
---                     | env =
---                         Env <|
---                             case Dict.get name e of
---                                 Just _ ->
---                                     e
---                                 Nothing ->
---                                     Dict.insert
---                                         name
---                                         (List.foldl (<<) identity body)
---                                         e
---                 }
---         )
---         |. P.keyword "def"
---         |. P.spaces
---         |= (P.succeed ()
---                 |. P.chompIf Char.isAlpha
---                 |. P.chompWhile Char.isAlphaNum
---                 |> P.getChompedString
---            )
---         |. P.spaces
---         |= P.loop [] parseDefBody
---         |. P.oneOf [ P.symbol "\n", P.end ]
--- parseDefBody : List BexProgram -> Parser (Step (List BexProgram) (List BexProgram))
--- parseDefBody reverseBody =
---     P.oneOf
---         [ P.succeed (\expr -> Loop (expr :: reverseBody))
---             |. P.spaces
---             |= P.oneOf [ parseBInt, parseBFunc ]
---         , P.succeed ()
---             |> P.map (\_ -> Done (List.reverse reverseBody))
---         ]
--- operators : List Char
--- operators =
---     [ '+'
---     , '-'
---     , '*'
---     , '/'
---     ]
--- ---- BUILTIN ENV ----
--- builtins : Env
--- builtins =
---     Dict.fromList
---         [ ( "+", sumExpr )
---         , ( "-", differenceExpr )
---         , ( "*", productExpr )
---         , ( "/", divisionExpr )
---         , ( "drop", dropExpr )
---         , ( "swap", swapExpr )
---         , ( "dup", dupExpr )
---         ]
---         |> Env
--- sumExpr : BexProgram
--- sumExpr ({ stack } as ctx) =
---     { ctx
---         | stack =
---             case stack of
---                 (BInt a) :: (BInt b) :: rest ->
---                     BInt (a + b) :: rest
---                 (BInt a) :: rest ->
---                     BFunc (\b -> a + b) :: rest
---                 rest ->
---                     BOper (+) :: rest
---     }
--- differenceExpr : BexProgram
--- differenceExpr ({ stack } as ctx) =
---     { ctx
---         | stack =
---             case stack of
---                 (BInt a) :: (BInt b) :: rest ->
---                     BInt (a - b) :: rest
---                 (BInt a) :: rest ->
---                     BFunc (\b -> a - b) :: rest
---                 rest ->
---                     BOper (-) :: rest
---     }
--- productExpr : BexProgram
--- productExpr ({ stack } as ctx) =
---     { ctx
---         | stack =
---             case stack of
---                 (BInt a) :: (BInt b) :: rest ->
---                     BInt (a * b) :: rest
---                 (BInt a) :: rest ->
---                     BFunc (\b -> a * b) :: rest
---                 rest ->
---                     BOper (*) :: rest
---     }
--- divisionExpr : BexProgram
--- divisionExpr ({ stack } as ctx) =
---     { ctx
---         | stack =
---             case stack of
---                 (BInt a) :: (BInt b) :: rest ->
---                     BInt (a // b) :: rest
---                 (BInt a) :: rest ->
---                     BFunc (\b -> a // b) :: rest
---                 rest ->
---                     BOper (//) :: rest
---     }
--- dropExpr : BexProgram
--- dropExpr ({ stack } as ctx) =
---     { ctx
---         | stack =
---             case stack of
---                 _ :: rest ->
---                     rest
---                 [] ->
---                     []
---     }
--- swapExpr : BexProgram
--- swapExpr ({ stack } as ctx) =
---     { ctx
---         | stack =
---             case stack of
---                 a :: b :: rest ->
---                     b :: a :: rest
---                 _ ->
---                     stack
---     }
--- dupExpr : BexProgram
--- dupExpr ({ stack } as ctx) =
---     { ctx
---         | stack =
---             case stack of
---                 a :: rest ->
---                     a :: a :: rest
---                 [] ->
---                     stack
---     }
+    P.map BFunc parseDefinitionName

@@ -11,7 +11,7 @@ scripts:
     cmd: elm-live src/Repl.elm --no-server -- --debug --output=src/elm-repl.js
   main-compiler-dev:
     desc: Run the compiler in dev mode
-    cmd: deno run --allow-read --unstable src/compiler.ts
+    cmd: deno run --allow-read --allow-write --unstable src/compiler.ts
   elm-compiler-dev:
     desc: Build elm compiler in dev mode
     cmd: elm-live src/Compiler.elm --no-server -- --debug --output=src/elm-compiler.js

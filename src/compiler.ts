@@ -19,27 +19,15 @@ app.ports.loadFile.subscribe(async function (filePath: string) {
   });
 });
 
+interface WriteMsg {
+  filePath: string;
+  content: string;
+}
+
+app.ports.writeFile.subscribe(async function ({ filePath, content }: WriteMsg) {
+  await Deno.writeFile(filePath, encoder.encode(content));
+});
+
 app.ports.status.subscribe(function (status: string) {
   console.log(status);
 });
-
-// app.ports.toTS.subscribe(async function ({ action, payload }: ElmMsg) {
-//   switch (action) {
-//     case "LOAD_FILE":
-//       const file = await Deno.readFile(payload);
-//       app.ports.fromTS.send({
-//         action: "FILE_LOADED",
-//         payload: {
-//           path: payload,
-//           content: decoder.decode(file),
-//         },
-//       });
-//       break;
-//     case "WRITE_FILE":
-//       await Deno.writeFile(payload.path, encoder.encode(payload.content));
-//       break;
-//     case "STATUS":
-//       console.log(payload);
-//       break;
-//   }
-// });

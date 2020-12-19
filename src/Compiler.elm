@@ -67,6 +67,9 @@ port status : String -> Cmd msg
 port loadFile : String -> Cmd msg
 
 
+port writeFile : Value -> Cmd msg
+
+
 type Msg
     = FileLoaded Value
 
@@ -77,16 +80,19 @@ update msg model =
         FileLoaded file ->
             case Json.Decode.decodeValue decodeFile file of
                 Ok ( path, content ) ->
-                    let
-                        parsedBex =
-                            Bex.parse content
-                                |> Debug.log "parsed bex"
-
-                        -- |> Result.map (Bex.eval Bex.init)
-                        -- |> Debug.log "evaled bex"
-                    in
                     ( { model | files = Dict.insert path content model.files }
-                    , status ("Loaded " ++ path)
+                    , Bex.parse content
+                        |> Result.andThen Bex.compile
+                        |> Result.map
+                            (\compiledBex ->
+                                [ ( "filePath", Json.Encode.string "./bex.js" )
+                                , ( "content", Json.Encode.string compiledBex )
+                                ]
+                                    |> Json.Encode.object
+                                    |> writeFile
+                            )
+                        |> Result.mapError status
+                        |> Result.Extra.merge
                     )
 
                 Err err ->
