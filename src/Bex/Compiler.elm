@@ -293,27 +293,27 @@ buildGraph =
 qualifyNames : BexModule -> Nonempty Definition
 qualifyNames { name, definitions } =
     List.Nonempty.map
-        (\({ body } as def) ->
-            { def
-                | body =
-                    List.Nonempty.map
-                        (\word ->
-                            case word of
-                                BFunc wd ->
-                                    BFunc <|
-                                        if memberBy (\d -> d.name == wd) definitions then
-                                            name ++ "." ++ wd
-
-                                        else
-                                            "Core." ++ wd
-
-                                _ ->
-                                    word
-                        )
-                        body
-            }
-        )
+        (\({ body } as def) -> { def | body = List.Nonempty.map (qualifyName name definitions) body })
         definitions
+
+
+qualifyName : String -> Nonempty Definition -> BExpr -> BExpr
+qualifyName moduleName definitions expr =
+    case expr of
+        BFunc wd ->
+            BFunc <|
+                if memberBy (\d -> d.name == wd) definitions then
+                    moduleName ++ "." ++ wd
+
+                else
+                    "Core." ++ wd
+
+        BQuote quotedExpr ->
+            qualifyName moduleName definitions quotedExpr
+                |> BQuote
+
+        _ ->
+            expr
 
 
 memberBy : (a -> Bool) -> Nonempty a -> Bool

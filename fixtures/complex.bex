@@ -4,3 +4,7 @@ Main exposing
 
 main
 	10 `inc swap dup * swap apply
+
+
+inc
+	1 +

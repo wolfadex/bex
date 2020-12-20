@@ -82,7 +82,7 @@ update msg model =
             case Json.Decode.decodeValue decodeFile file of
                 Ok ( path, content ) ->
                     ( { model | files = Dict.insert path content model.files }
-                    , Bex.Parser.parse content
+                    , Bex.Parser.parse path content
                         |> Result.andThen Bex.Compiler.compile
                         |> Result.map
                             (\compiledBex ->
