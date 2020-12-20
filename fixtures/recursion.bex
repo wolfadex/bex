@@ -1,0 +1,20 @@
+Main exposing
+	main
+
+main
+	500000000000 to0 inc
+
+to0
+	dup `to0Helper swap `dec swap is1 then apply
+
+to0Helper
+	dec to0
+
+is1
+	1 =
+
+dec
+	1 swap -
+
+inc
+	1 +

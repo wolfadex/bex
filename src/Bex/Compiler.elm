@@ -218,9 +218,9 @@ builtInWordsCompiled =
       , word = "operator_divide"
       , body = """  const [a, b, ...rest] = stack;
   if (b === 0) {
-    return [0, ...rest];
+    return [BigInt(0), ...rest];
   } else {
-    return [Math.floor(a / b), ...rest];
+    return [a / b, ...rest];
   }"""
       }
     , { moduleName = "Core"
@@ -271,7 +271,7 @@ literalCompiledFunc =
             }
         ++ """(i) {
   return function(stack) {
-    return [i, ...stack];
+    return [BigInt(i), ...stack];
   }
 }"""
 
