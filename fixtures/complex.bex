@@ -1,6 +1,14 @@
 Main exposing
 	main
 
-
 main
-	10 `inc swap dup * swap apply
+	10 dup * `inc `dec 5 is5 then apply
+
+is5
+	5 =
+
+inc
+	1 +
+
+dec
+	1 swap -

@@ -31,16 +31,35 @@ The syntax is:
 | -                         | Difference of the top 2 numbers                                                                                                                                                                                                                          |
 | \*                        | Product of the top 2 numbers                                                                                                                                                                                                                             |
 | /                         | Quotient of the top 2 numbers                                                                                                                                                                                                                            |
+| =                         | Equality of the top 2 items. If equal it pushes replaces them with a 1, otherwise a 2. Ueses JS's `===`                                                                                                                                                  |
 | drop                      | Remove top item on stack                                                                                                                                                                                                                                 |
 | swap                      | Swap the place of the top 2 items on the stack                                                                                                                                                                                                           |
 | dup                       | Duplicate the top item on the stack                                                                                                                                                                                                                      |
+| `**func**                 | Quote a function. This puts the function on the top of the stack instead of applying it. Will be useful for partially apply functions as well as conditionals.                                                                                           |
+| apply                     | Pull the type item off the stack and apply it. That top item must be a function or it'll cause a runtime error.                                                                                                                                          |
+| then                      | Used like `if` in most contemporary languages. Because Bex compiles to JS this uses JS's truthiness to determine truthiness.                                                                                                                             |
+| else                      | Used like `if` in most contemporary languages, but with the truthiness reversed. Use when you want the opposite behavior of `then`.                                                                                                                      |
 | def **_name_** **_body_** | Define your own functions. The **_name_** must be an alpha character followed by any number of alphanumeric characters. The **_body_** is a space separated list of other functions. The definition ends at a newline character or the end of the input. |
 
-#### Examples of using def
+#### Examples of using `def`
 
 - n ^ 2 = `def square dup *`
 - increment = `def inc 1 +`
 - decrement = `def dec 1 swap -`
+
+#### Example of using `then` with quotes and `apply`
+
+This will push `1` onto the stack, then `2`, then `0`. The `then` function will pop the `0` off the stack and check its truthiness. Being falsey, it will discard the `1`.
+
+```
+1 2 0 then
+```
+
+```
+0 `inc `dec 5 else apply
+```
+
+This will push `0` onto the stack, then `inc`, `dec`, and `5`. The `else` function will pop the `5` off the stack and check its truthiness. Being truthy, it will discard the `inc`. Finally `apply` will pop `dec` off the stack and run it which pops `0` off the stack and decrements it `-1` and puts it back on the stack.
 
 ### Intro to concatenative programming
 
@@ -209,7 +228,3 @@ When you do this, `resultingStack` will be the values on the stack after the cod
 [Elm](https://elm-lang.org/) is used for parsing and evaluating the language. [Deno](https://deno.land/) is used as a minimal clue between Elm and the terminal.
 
 Make sure both Elm and Deno are installed, as well as [Velociraptor](https://deno.land/x/velociraptor) which is usd for simplifying running scripts. In your terminal run `vr elm-repl-dev` to compile the Elm code on change, and run `vr main-repl-dev` to compile the Deno glue and start the repl.
-
-```
-
-```

@@ -164,6 +164,13 @@ compileFunc moduleName expr =
                         , function = "Core__operator_divide"
                         }
 
+                "=" ->
+                    buildNamespace
+                        { user = "wolfadex"
+                        , package = "bex"
+                        , function = "Core__operator_equal"
+                        }
+
                 _ ->
                     "(a) => a"
 
@@ -217,9 +224,24 @@ builtInWordsCompiled =
   }"""
       }
     , { moduleName = "Core"
+      , word = "operator_equal"
+      , body = """  const [a, b, ...rest] = stack;
+  return [a === b ? 1 : 0, ...rest];""" -- use 0 and 1 because we only work with Ints and Funcs right now
+      }
+    , { moduleName = "Core"
       , word = "apply"
       , body = """  const [f, ...rest] = stack;
   return f(rest);"""
+      }
+    , { moduleName = "Core"
+      , word = "then"
+      , body = """  const [condition, trueCase, falseCase, ...rest] = stack;
+  return [condition ? trueCase : falseCase, ...rest]"""
+      }
+    , { moduleName = "Core"
+      , word = "else"
+      , body = """  const [condition, trueCase, falseCase, ...rest] = stack;
+  return [!condition ? trueCase : falseCase, ...rest]"""
       }
     ]
         |> List.map createCompiledFunc
@@ -293,27 +315,27 @@ buildGraph =
 qualifyNames : BexModule -> Nonempty Definition
 qualifyNames { name, definitions } =
     List.Nonempty.map
-        (\({ body } as def) ->
-            { def
-                | body =
-                    List.Nonempty.map
-                        (\word ->
-                            case word of
-                                BFunc wd ->
-                                    BFunc <|
-                                        if memberBy (\d -> d.name == wd) definitions then
-                                            name ++ "." ++ wd
-
-                                        else
-                                            "Core." ++ wd
-
-                                _ ->
-                                    word
-                        )
-                        body
-            }
-        )
+        (\({ body } as def) -> { def | body = List.Nonempty.map (qualifyName name definitions) body })
         definitions
+
+
+qualifyName : String -> Nonempty Definition -> BExpr -> BExpr
+qualifyName moduleName definitions expr =
+    case expr of
+        BFunc wd ->
+            BFunc <|
+                if memberBy (\d -> d.name == wd) definitions then
+                    moduleName ++ "." ++ wd
+
+                else
+                    "Core." ++ wd
+
+        BQuote quotedExpr ->
+            qualifyName moduleName definitions quotedExpr
+                |> BQuote
+
+        _ ->
+            expr
 
 
 memberBy : (a -> Bool) -> Nonempty a -> Bool
