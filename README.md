@@ -34,6 +34,8 @@ The syntax is:
 | drop                      | Remove top item on stack                                                                                                                                                                                                                                 |
 | swap                      | Swap the place of the top 2 items on the stack                                                                                                                                                                                                           |
 | dup                       | Duplicate the top item on the stack                                                                                                                                                                                                                      |
+| `**func**                 | Quote a function. This puts the function on the top of the stack instead of applying it. Will be useful for partially apply functions as well as conditionals.                                                                                           |
+| apply                     | Pull the type item off the stack and apply it. That top item must be a function or it'll cause a runtime error.                                                                                                                                          |
 | def **_name_** **_body_** | Define your own functions. The **_name_** must be an alpha character followed by any number of alphanumeric characters. The **_body_** is a space separated list of other functions. The definition ends at a newline character or the end of the input. |
 
 #### Examples of using def
@@ -209,7 +211,3 @@ When you do this, `resultingStack` will be the values on the stack after the cod
 [Elm](https://elm-lang.org/) is used for parsing and evaluating the language. [Deno](https://deno.land/) is used as a minimal clue between Elm and the terminal.
 
 Make sure both Elm and Deno are installed, as well as [Velociraptor](https://deno.land/x/velociraptor) which is usd for simplifying running scripts. In your terminal run `vr elm-repl-dev` to compile the Elm code on change, and run `vr main-repl-dev` to compile the Deno glue and start the repl.
-
-```
-
-```
