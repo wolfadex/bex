@@ -31,6 +31,7 @@ The syntax is:
 | -                         | Difference of the top 2 numbers                                                                                                                                                                                                                          |
 | \*                        | Product of the top 2 numbers                                                                                                                                                                                                                             |
 | /                         | Quotient of the top 2 numbers                                                                                                                                                                                                                            |
+| =                         | Equality of the top 2 items. If equal it pushes replaces them with a 1, otherwise a 2. Ueses JS's `===`                                                                                                                                                  |
 | drop                      | Remove top item on stack                                                                                                                                                                                                                                 |
 | swap                      | Swap the place of the top 2 items on the stack                                                                                                                                                                                                           |
 | dup                       | Duplicate the top item on the stack                                                                                                                                                                                                                      |
@@ -48,7 +49,7 @@ The syntax is:
 
 #### Example of using `then` with quotes and `apply`
 
-This will push `1` onto the stack, then `2`, then `0`. The `then` function will pop the `0` off the stack and check its truthiness. Being falsey, it will discard the `2`.
+This will push `1` onto the stack, then `2`, then `0`. The `then` function will pop the `0` off the stack and check its truthiness. Being falsey, it will discard the `1`.
 
 ```
 1 2 0 then
@@ -58,7 +59,7 @@ This will push `1` onto the stack, then `2`, then `0`. The `then` function will 
 0 `inc `dec 5 else apply
 ```
 
-This will push `0` onto the stack, then `inc`, `dec`, and `5`. The `else` function will pop the `5` off the stack and check its truthiness. Being truthy, it will discard the `dec`. Finally `apply` will pop `inc` off the stack and run it which pops `0` off the stack and increments it `1` and puts it back on the stack.
+This will push `0` onto the stack, then `inc`, `dec`, and `5`. The `else` function will pop the `5` off the stack and check its truthiness. Being truthy, it will discard the `inc`. Finally `apply` will pop `dec` off the stack and run it which pops `0` off the stack and decrements it `-1` and puts it back on the stack.
 
 ### Intro to concatenative programming
 

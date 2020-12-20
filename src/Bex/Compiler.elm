@@ -164,6 +164,13 @@ compileFunc moduleName expr =
                         , function = "Core__operator_divide"
                         }
 
+                "=" ->
+                    buildNamespace
+                        { user = "wolfadex"
+                        , package = "bex"
+                        , function = "Core__operator_equal"
+                        }
+
                 _ ->
                     "(a) => a"
 
@@ -215,6 +222,11 @@ builtInWordsCompiled =
   } else {
     return [Math.floor(a / b), ...rest];
   }"""
+      }
+    , { moduleName = "Core"
+      , word = "operator_equal"
+      , body = """  const [a, b, ...rest] = stack;
+  return [a === b ? 1 : 0, ...rest];""" -- use 0 and 1 because we only work with Ints and Funcs right now
       }
     , { moduleName = "Core"
       , word = "apply"
