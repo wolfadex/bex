@@ -221,6 +221,16 @@ builtInWordsCompiled =
       , body = """  const [f, ...rest] = stack;
   return f(rest);"""
       }
+    , { moduleName = "Core"
+      , word = "then"
+      , body = """  const [condition, trueCase, falseCase, ...rest] = stack;
+  return [condition ? trueCase : falseCase, ...rest]"""
+      }
+    , { moduleName = "Core"
+      , word = "else"
+      , body = """  const [condition, trueCase, falseCase, ...rest] = stack;
+  return [!condition ? trueCase : falseCase, ...rest]"""
+      }
     ]
         |> List.map createCompiledFunc
         |> String.join "\n"

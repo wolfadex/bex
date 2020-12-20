@@ -3,8 +3,12 @@ Main exposing
 
 
 main
-	10 `inc swap dup * swap apply
+	10 dup * `inc `dec 0 then apply
 
 
 inc
 	1 +
+
+
+dec
+	1 swap -
