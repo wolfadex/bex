@@ -1,0 +1,28 @@
+Basics exposing
+	increment
+	decrement
+	square
+	not
+	isEven
+	isOdd
+
+increment
+	1 +
+
+decrement
+	1 -
+
+square
+	dup *
+
+not
+	= 0 1 0 then
+
+else
+	not then
+
+isEven
+	2 mod 0 =
+
+isOdd
+	isEven not

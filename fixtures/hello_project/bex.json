@@ -1,0 +1,19 @@
+{
+  "type": "application",
+  "entry-file": "MakeEven",
+  "source-directories": ["src"],
+  "bex-version": 1608498236496,
+  "dependencies": {
+    "direct": {
+      "Basics": {
+        "src": "bex/core",
+        "version": 1608498236496
+      }
+    },
+    "indirect": {}
+  },
+  "test-dependencies": {
+    "direct": {},
+    "indirect": {}
+  }
+}

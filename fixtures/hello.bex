@@ -5,7 +5,7 @@ main
 	4 2 + square dec
 
 dec
-	1 swap -
+	1 -
 
 square
 	dup *
