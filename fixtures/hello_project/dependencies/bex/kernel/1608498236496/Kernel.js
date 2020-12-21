@@ -43,6 +43,10 @@ function __kernel__apply(stack) {
   return f(rest);
 }
 
+function __kernel__identity(stack) {
+  return stack;
+}
+
 function __kernel__then(stack) {
   const [condition, trueCase, falseCase, ...rest] = stack;
   return [condition ? trueCase : falseCase, ...rest];

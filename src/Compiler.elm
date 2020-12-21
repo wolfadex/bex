@@ -227,9 +227,7 @@ parseBodies { projectPath, config, loadedFiles } =
     let
         resultParsedBodies : Dict String (Result String BexModule)
         resultParsedBodies =
-            loadedFiles
-                |> Debug.log "loaded files"
-                |> Dict.map Bex.Parser.parseBody
+            Dict.map Bex.Parser.parseBody loadedFiles
 
         condenseResultOfParsing =
             Dict.foldl

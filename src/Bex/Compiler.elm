@@ -2,6 +2,8 @@ module Bex.Compiler exposing (Context, compile)
 
 import Bex.Lang as Lang exposing (BExpr(..), BexModule, BexModulePartial, Definition)
 import Dict exposing (Dict)
+import Dict.Extra
+import Html exposing (a)
 import Html.Attributes exposing (reversed)
 import List.Nonempty exposing (Nonempty)
 import Parser as P exposing ((|.), (|=), Parser, Step(..), Trailing(..))
@@ -39,19 +41,12 @@ buildNamespace { user, package, function } =
 
 compile : String -> String -> List BexModule -> Result String String
 compile kernelCode entryModule bexModules =
+    let
+        dependencyGraph =
+            buildDependencyGraph bexModules
+    in
     bexModules
-        |> List.foldl
-            (\module_ ->
-                Result.andThen
-                    (\compiledMods ->
-                        Result.map
-                            (\compiledMod ->
-                                compiledMod :: compiledMods
-                            )
-                            (compileModule module_)
-                    )
-            )
-            (Ok [])
+        |> doCompiling dependencyGraph Dict.empty Dict.empty
         |> Result.map
             (\userDefineds ->
                 "(function(scope) {\n'use strict';"
@@ -67,11 +62,61 @@ compile kernelCode entryModule bexModules =
             )
 
 
-compileModule : BexModule -> Result String String
-compileModule ({ name, exposing_, definitions } as mod) =
+doCompiling : Dict String (List String) -> Dict String String -> Dict String (List Definition) -> List BexModule -> Result String (List String)
+doCompiling dependencyGraph compiledModules envDefinitions modules =
+    let
+        ( toCompileNames, remainingGrpah ) =
+            Dict.partition (\_ imports -> List.isEmpty imports) dependencyGraph
+                |> Tuple.mapFirst Dict.keys
+
+        ( toCompileModules, remainingModules ) =
+            List.partition (\{ name } -> List.member name toCompileNames) modules
+
+        waitingGraphs =
+            Dict.map
+                (\_ imports -> List.filter (\import_ -> not <| List.member import_ toCompileNames) imports)
+                remainingGrpah
+    in
+    case toCompileModules of
+        [] ->
+            Ok (Dict.values compiledModules)
+
+        _ ->
+            toCompileModules
+                |> List.foldl
+                    (\module_ ->
+                        Result.andThen
+                            (\( compiledMods, envDefs ) ->
+                                Result.map
+                                    (\compiledMod ->
+                                        ( Dict.insert module_.name compiledMod compiledMods
+                                        , Dict.insert module_.name (List.Nonempty.toList module_.definitions) envDefs
+                                        )
+                                    )
+                                    (compileModule envDefs module_)
+                            )
+                    )
+                    (Ok ( compiledModules, envDefinitions ))
+                |> Result.andThen
+                    (\( compiled, newEnvDef ) ->
+                        doCompiling waitingGraphs compiled newEnvDef remainingModules
+                    )
+
+
+buildDependencyGraph : List BexModule -> Dict String (List String)
+buildDependencyGraph =
+    List.foldl
+        (\{ name, imports } ->
+            Dict.insert name imports
+        )
+        Dict.empty
+
+
+compileModule : Dict String (List Definition) -> BexModule -> Result String String
+compileModule envDefinitions ({ name, definitions } as mod) =
     mod
-        |> qualifyNames
-        |> buildGraph
+        |> qualifyNames envDefinitions
+        |> buildCompiledExprs
         |> Result.map
             (Dict.foldl
                 (\defName body res ->
@@ -200,8 +245,8 @@ createCompiledFunc { moduleName, word, body } =
 ---- REDUCE ----
 
 
-buildGraph : Nonempty Definition -> Result String (Dict String (Nonempty BExpr))
-buildGraph =
+buildCompiledExprs : Nonempty Definition -> Result String (Dict String (Nonempty BExpr))
+buildCompiledExprs =
     List.Nonempty.foldl
         (\{ name, body } ->
             Result.andThen
@@ -217,15 +262,15 @@ buildGraph =
         (Ok Dict.empty)
 
 
-qualifyNames : BexModule -> Nonempty Definition
-qualifyNames { name, definitions } =
+qualifyNames : Dict String (List Definition) -> BexModule -> Nonempty Definition
+qualifyNames envDefinitions { name, definitions } =
     List.Nonempty.map
-        (\({ body } as def) -> { def | body = List.Nonempty.map (qualifyName name definitions) body })
+        (\({ body } as def) -> { def | body = List.Nonempty.map (qualifyName envDefinitions name definitions) body })
         definitions
 
 
-qualifyName : String -> Nonempty Definition -> BExpr -> BExpr
-qualifyName moduleName definitions expr =
+qualifyName : Dict String (List Definition) -> String -> Nonempty Definition -> BExpr -> BExpr
+qualifyName envDefinitions moduleName definitions expr =
     case expr of
         BFunc wd ->
             BFunc <|
@@ -240,14 +285,70 @@ qualifyName moduleName definitions expr =
                         }
 
                 else
-                    "ERROR_" ++ wd
+                    let
+                        maybeWord =
+                            String.split "." wd
+                                |> List.reverse
+                                |> (\parts ->
+                                        case parts of
+                                            [] ->
+                                                []
+
+                                            [ a ] ->
+                                                [ a ]
+
+                                            a :: rest ->
+                                                [ rest
+                                                    |> List.reverse
+                                                    |> String.join "."
+                                                , a
+                                                ]
+                                   )
+                                |> (\partitionedWord ->
+                                        case partitionedWord of
+                                            [ modName, word ] ->
+                                                Dict.get modName envDefinitions
+                                                    |> Maybe.andThen
+                                                        (\defs ->
+                                                            findBy (.name >> (==) word) defs
+                                                                |> Maybe.map (\_ -> String.join "." [ modName, word ])
+                                                        )
+
+                                            _ ->
+                                                Nothing
+                                   )
+                    in
+                    case maybeWord of
+                        Just word ->
+                            buildNamespace
+                                { user = "wolfadex"
+                                , package = "bex"
+                                , function = String.replace "." "__" word
+                                }
+
+                        Nothing ->
+                            "ERROR_" ++ Debug.log "error word" wd
 
         BQuote quotedExpr ->
-            qualifyName moduleName definitions quotedExpr
+            qualifyName envDefinitions moduleName definitions quotedExpr
                 |> BQuote
 
         _ ->
             expr
+
+
+findBy : (a -> Bool) -> List a -> Maybe a
+findBy predicate ls =
+    case ls of
+        [] ->
+            Nothing
+
+        a :: rest ->
+            if predicate a then
+                Just a
+
+            else
+                findBy predicate rest
 
 
 memberBy : (a -> Bool) -> Nonempty a -> Bool
