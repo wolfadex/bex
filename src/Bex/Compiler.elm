@@ -1,7 +1,9 @@
 module Bex.Compiler exposing (Context, compile)
 
-import Bex.Lang exposing (BExpr(..), BexModule, Definition)
+import Bex.Lang as Lang exposing (BExpr(..), BexModule, BexModulePartial, Definition)
 import Dict exposing (Dict)
+import Dict.Extra
+import Html exposing (a)
 import Html.Attributes exposing (reversed)
 import List.Nonempty exposing (Nonempty)
 import Parser as P exposing ((|.), (|=), Parser, Step(..), Trailing(..))
@@ -37,42 +39,98 @@ buildNamespace { user, package, function } =
     String.join "__" [ user, package, function ]
 
 
-compile : BexModule -> Result String String
-compile ({ name, exposing_, definitions } as mod) =
-    mod
-        |> qualifyNames
-        |> buildGraph
-        |> Result.andThen
-            (\graph ->
-                let
-                    userDefined =
-                        Dict.foldl
-                            (\defName body res ->
-                                res
-                                    ++ "\n"
-                                    ++ createCompiledFunc
-                                        { moduleName = name
-                                        , word = defName
-                                        , body = compileFuncBody name body
-                                        }
+compile : String -> String -> List BexModule -> Result String String
+compile kernelCode entryModule bexModules =
+    let
+        dependencyGraph =
+            buildDependencyGraph bexModules
+    in
+    bexModules
+        |> doCompiling dependencyGraph Dict.empty Dict.empty
+        |> Result.map
+            (\userDefineds ->
+                "(function(scope) {\n'use strict';"
+                    ++ "\n// BEGIN CORE\n"
+                    ++ kernelCode
+                    ++ "\n"
+                    ++ runtimeCompiledFunc entryModule
+                    ++ "\n// END CORE\n// BEGIN USER"
+                    ++ String.join "\n" userDefineds
+                    ++ "\n// END USER"
+                    ++ exposeRuntime entryModule
+                    ++ "}(this));"
+            )
+
+
+doCompiling : Dict String (List String) -> Dict String String -> Dict String (List Definition) -> List BexModule -> Result String (List String)
+doCompiling dependencyGraph compiledModules envDefinitions modules =
+    let
+        ( toCompileNames, remainingGrpah ) =
+            Dict.partition (\_ imports -> List.isEmpty imports) dependencyGraph
+                |> Tuple.mapFirst Dict.keys
+
+        ( toCompileModules, remainingModules ) =
+            List.partition (\{ name } -> List.member name toCompileNames) modules
+
+        waitingGraphs =
+            Dict.map
+                (\_ imports -> List.filter (\import_ -> not <| List.member import_ toCompileNames) imports)
+                remainingGrpah
+    in
+    case toCompileModules of
+        [] ->
+            Ok (Dict.values compiledModules)
+
+        _ ->
+            toCompileModules
+                |> List.foldl
+                    (\module_ ->
+                        Result.andThen
+                            (\( compiledMods, envDefs ) ->
+                                Result.map
+                                    (\compiledMod ->
+                                        ( Dict.insert module_.name compiledMod compiledMods
+                                        , Dict.insert module_.name (List.Nonempty.toList module_.definitions) envDefs
+                                        )
+                                    )
+                                    (compileModule envDefs module_)
                             )
-                            ""
-                            graph
-                in
-                Ok
-                    ("(function(scope) {\n'use strict';"
-                        ++ "\n// BEGIN CORE\n"
-                        ++ builtInWordsCompiled
-                        ++ "\n"
-                        ++ literalCompiledFunc
-                        ++ quoteCompiledFunc
-                        ++ runtimeCompiledFunc name
-                        ++ "\n// END CORE\n// BEGIN USER"
-                        ++ userDefined
-                        ++ "\n// END USER\n"
-                        ++ exposeRuntime name
-                        ++ "}(this));"
                     )
+                    (Ok ( compiledModules, envDefinitions ))
+                |> Result.andThen
+                    (\( compiled, newEnvDef ) ->
+                        doCompiling waitingGraphs compiled newEnvDef remainingModules
+                    )
+
+
+buildDependencyGraph : List BexModule -> Dict String (List String)
+buildDependencyGraph =
+    List.foldl
+        (\{ name, imports } ->
+            Dict.insert name imports
+        )
+        Dict.empty
+
+
+compileModule : Dict String (List Definition) -> BexModule -> Result String String
+compileModule envDefinitions ({ name, definitions } as mod) =
+    mod
+        |> qualifyNames envDefinitions
+        |> buildCompiledExprs
+        |> Result.map
+            (Dict.foldl
+                (\defName body res ->
+                    res
+                        ++ "\n"
+                        ++ createCompiledFunc
+                            { moduleName = name
+                            , word = defName
+                            , body = compileFuncBody body
+                            }
+                )
+                ""
+                >> (++) ("\n// BEGIN USER MOD " ++ name)
+                >> (\code -> code ++ "\n// END USER MOD " ++ name)
             )
 
 
@@ -103,149 +161,71 @@ function Bex_run() {
 }"""
 
 
-compileFuncBody : String -> Nonempty BExpr -> String
-compileFuncBody moduleName =
-    List.Nonempty.map (compileFunc moduleName)
+compileFuncBody : Nonempty BExpr -> String
+compileFuncBody =
+    List.Nonempty.map compileFunc
         >> List.Nonempty.toList
         >> String.join ", "
-        >> (\toReduce -> "  return [" ++ toReduce ++ "].reduce((acc, f) => f(acc), stack);")
+        >> (\toReduce -> "  const fns = [" ++ toReduce ++ """];
+    for (let i = 0; i < fns.length; i++) {
+      stack = fns[i](stack);
+    }
+    return stack;""")
 
 
-compileFunc : String -> BExpr -> String
-compileFunc moduleName expr =
+compileFunc : BExpr -> String
+compileFunc expr =
     case expr of
         BInt i ->
-            buildNamespace
-                { user = "wolfadex"
-                , package = "bex"
-                , function = "Core__literal_int"
-                }
-                ++ "("
+            "__kernel__literal_int("
                 ++ String.fromInt i
                 ++ ")"
 
         BQuote quotedExpr ->
-            buildNamespace
-                { user = "wolfadex"
-                , package = "bex"
-                , function = "Core__quote"
-                }
-                ++ "("
-                ++ compileFunc moduleName quotedExpr
+            "__kernel__quote("
+                ++ compileFunc quotedExpr
                 ++ ")"
 
         BOper op ->
             case op of
                 "+" ->
-                    buildNamespace
-                        { user = "wolfadex"
-                        , package = "bex"
-                        , function = "Core__operator_add"
-                        }
+                    "__kernel__operator_add"
 
                 "-" ->
-                    buildNamespace
-                        { user = "wolfadex"
-                        , package = "bex"
-                        , function = "Core__operator_subtract"
-                        }
+                    "__kernel__operator_subtract"
 
                 "*" ->
-                    buildNamespace
-                        { user = "wolfadex"
-                        , package = "bex"
-                        , function = "Core__operator_times"
-                        }
+                    "__kernel__operator_times"
 
                 "/" ->
-                    buildNamespace
-                        { user = "wolfadex"
-                        , package = "bex"
-                        , function = "Core__operator_divide"
-                        }
+                    "__kernel__operator_divide"
 
                 "=" ->
-                    buildNamespace
-                        { user = "wolfadex"
-                        , package = "bex"
-                        , function = "Core__operator_equal"
-                        }
+                    "__kernel__operator_equal"
+
+                ">" ->
+                    "__kernel__operator_greater_then"
+
+                ">=" ->
+                    "__kernel__operator_greater_then_or_equal"
+
+                "<" ->
+                    "__kernel__operator_less_then"
+
+                "<=" ->
+                    "__kernel__operator_less_then_or_equal"
+
+                "mod" ->
+                    "__kernel__operator_mod"
+
+                "rem" ->
+                    "__kernel__operator_rem"
 
                 _ ->
                     "(a) => a"
 
         BFunc wd ->
-            buildNamespace
-                { user = "wolfadex"
-                , package = "bex"
-                , function = String.replace "." "__" wd
-                }
-
-
-builtInWordsCompiled : String
-builtInWordsCompiled =
-    [ { moduleName = "Core"
-      , word = "swap"
-      , body = """  const [a, b, ...rest] = stack;
-  return [b, a, ...rest];"""
-      }
-    , { moduleName = "Core"
-      , word = "drop"
-      , body = """  const [a, b, ...rest] = stack;
-  return [b, a, ...rest];"""
-      }
-    , { moduleName = "Core"
-      , word = "dup"
-      , body = """  const [a, ...rest] = stack;
-  return [a, a, ...rest];"""
-      }
-    , { moduleName = "Core"
-      , word = "operator_add"
-      , body = """  const [a, b, ...rest] = stack;
-  return [a + b, ...rest];"""
-      }
-    , { moduleName = "Core"
-      , word = "operator_subtract"
-      , body = """  const [a, b, ...rest] = stack;
-  return [a - b, ...rest];"""
-      }
-    , { moduleName = "Core"
-      , word = "operator_times"
-      , body = """  const [a, b, ...rest] = stack;
-  return [a * b, ...rest];"""
-      }
-    , { moduleName = "Core"
-      , word = "operator_divide"
-      , body = """  const [a, b, ...rest] = stack;
-  if (b === 0) {
-    return [BigInt(0), ...rest];
-  } else {
-    return [a / b, ...rest];
-  }"""
-      }
-    , { moduleName = "Core"
-      , word = "operator_equal"
-      , body = """  const [a, b, ...rest] = stack;
-  return [a === b ? 1 : 0, ...rest];""" -- use 0 and 1 because we only work with Ints and Funcs right now
-      }
-    , { moduleName = "Core"
-      , word = "apply"
-      , body = """  const [f, ...rest] = stack;
-  return f(rest);"""
-      }
-    , { moduleName = "Core"
-      , word = "then"
-      , body = """  const [condition, trueCase, falseCase, ...rest] = stack;
-  return [condition ? trueCase : falseCase, ...rest]"""
-      }
-    , { moduleName = "Core"
-      , word = "else"
-      , body = """  const [condition, trueCase, falseCase, ...rest] = stack;
-  return [!condition ? trueCase : falseCase, ...rest]"""
-      }
-    ]
-        |> List.map createCompiledFunc
-        |> String.join "\n"
+            wd
 
 
 createCompiledFunc : { moduleName : String, word : String, body : String } -> String
@@ -261,42 +241,12 @@ createCompiledFunc { moduleName, word, body } =
         ++ "\n}"
 
 
-literalCompiledFunc : String
-literalCompiledFunc =
-    "function "
-        ++ buildNamespace
-            { user = "wolfadex"
-            , package = "bex"
-            , function = "Core__literal_int"
-            }
-        ++ """(i) {
-  return function(stack) {
-    return [BigInt(i), ...stack];
-  }
-}"""
-
-
-quoteCompiledFunc : String
-quoteCompiledFunc =
-    "function "
-        ++ buildNamespace
-            { user = "wolfadex"
-            , package = "bex"
-            , function = "Core__quote"
-            }
-        ++ """(quotedFn) {
-  return function(stack) {
-    return [quotedFn, ...stack];
-  }
-}"""
-
-
 
 ---- REDUCE ----
 
 
-buildGraph : Nonempty Definition -> Result String (Dict String (Nonempty BExpr))
-buildGraph =
+buildCompiledExprs : Nonempty Definition -> Result String (Dict String (Nonempty BExpr))
+buildCompiledExprs =
     List.Nonempty.foldl
         (\{ name, body } ->
             Result.andThen
@@ -312,30 +262,93 @@ buildGraph =
         (Ok Dict.empty)
 
 
-qualifyNames : BexModule -> Nonempty Definition
-qualifyNames { name, definitions } =
+qualifyNames : Dict String (List Definition) -> BexModule -> Nonempty Definition
+qualifyNames envDefinitions { name, definitions } =
     List.Nonempty.map
-        (\({ body } as def) -> { def | body = List.Nonempty.map (qualifyName name definitions) body })
+        (\({ body } as def) -> { def | body = List.Nonempty.map (qualifyName envDefinitions name definitions) body })
         definitions
 
 
-qualifyName : String -> Nonempty Definition -> BExpr -> BExpr
-qualifyName moduleName definitions expr =
+qualifyName : Dict String (List Definition) -> String -> Nonempty Definition -> BExpr -> BExpr
+qualifyName envDefinitions moduleName definitions expr =
     case expr of
         BFunc wd ->
             BFunc <|
-                if memberBy (\d -> d.name == wd) definitions then
-                    moduleName ++ "." ++ wd
+                if List.member wd Lang.builtinWords then
+                    "__kernel__" ++ wd
+
+                else if memberBy (\d -> d.name == wd) definitions then
+                    buildNamespace
+                        { user = "wolfadex"
+                        , package = "bex"
+                        , function = String.replace "." "__" (moduleName ++ "." ++ wd)
+                        }
 
                 else
-                    "Core." ++ wd
+                    let
+                        maybeWord =
+                            String.split "." wd
+                                |> List.reverse
+                                |> (\parts ->
+                                        case parts of
+                                            [] ->
+                                                []
+
+                                            [ a ] ->
+                                                [ a ]
+
+                                            a :: rest ->
+                                                [ rest
+                                                    |> List.reverse
+                                                    |> String.join "."
+                                                , a
+                                                ]
+                                   )
+                                |> (\partitionedWord ->
+                                        case partitionedWord of
+                                            [ modName, word ] ->
+                                                Dict.get modName envDefinitions
+                                                    |> Maybe.andThen
+                                                        (\defs ->
+                                                            findBy (.name >> (==) word) defs
+                                                                |> Maybe.map (\_ -> String.join "." [ modName, word ])
+                                                        )
+
+                                            _ ->
+                                                Nothing
+                                   )
+                    in
+                    case maybeWord of
+                        Just word ->
+                            buildNamespace
+                                { user = "wolfadex"
+                                , package = "bex"
+                                , function = String.replace "." "__" word
+                                }
+
+                        Nothing ->
+                            "ERROR_" ++ Debug.log "error word" wd
 
         BQuote quotedExpr ->
-            qualifyName moduleName definitions quotedExpr
+            qualifyName envDefinitions moduleName definitions quotedExpr
                 |> BQuote
 
         _ ->
             expr
+
+
+findBy : (a -> Bool) -> List a -> Maybe a
+findBy predicate ls =
+    case ls of
+        [] ->
+            Nothing
+
+        a :: rest ->
+            if predicate a then
+                Just a
+
+            else
+                findBy predicate rest
 
 
 memberBy : (a -> Bool) -> Nonempty a -> Bool

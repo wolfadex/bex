@@ -6,4 +6,6 @@ const bexJS = decoder.decode(bexFile);
 const globalEval = eval;
 globalEval(bexJS);
 
-console.log(globalThis.Bex.Main.run());
+const [entryModule] = Deno.args;
+console.log(entryModule);
+console.log(globalThis.Bex[entryModule].run());

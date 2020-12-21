@@ -26,7 +26,7 @@ The syntax is:
 
 | Syntax                    | Description                                                                                                                                                                                                                                              |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| positive integers         | 0, 1, 2 ... but uses JS's BigInt.                                                                                                                                                                                                                                              |
+| positive integers         | 0, 1, 2 ... but uses JS's BigInt.                                                                                                                                                                                                                        |
 | +                         | Sum of 2 numbers                                                                                                                                                                                                                                         |
 | -                         | Difference of the top 2 numbers                                                                                                                                                                                                                          |
 | \*                        | Product of the top 2 numbers                                                                                                                                                                                                                             |
@@ -37,9 +37,11 @@ The syntax is:
 | dup                       | Duplicate the top item on the stack                                                                                                                                                                                                                      |
 | `**func**                 | Quote a function. This puts the function on the top of the stack instead of applying it. Will be useful for partially apply functions as well as conditionals.                                                                                           |
 | apply                     | Pull the type item off the stack and apply it. That top item must be a function or it'll cause a runtime error.                                                                                                                                          |
+| identity                  | Keeps the stack as is.                                                                                                                                                                                                                                   |
 | then                      | Used like `if` in most contemporary languages. Because Bex compiles to JS this uses JS's truthiness to determine truthiness.                                                                                                                             |
 | else                      | Used like `if` in most contemporary languages, but with the truthiness reversed. Use when you want the opposite behavior of `then`.                                                                                                                      |
 | def **_name_** **_body_** | Define your own functions. The **_name_** must be an alpha character followed by any number of alphanumeric characters. The **_body_** is a space separated list of other functions. The definition ends at a newline character or the end of the input. |
+| emit                      | Prints, using JS's `console.log`, the top value of the stack without modifying the stack.                                                                                                                                                                |
 
 #### Examples of using `def`
 
@@ -186,14 +188,16 @@ A basic visual example:
 A basic `.bex` file has the shape
 
 ```
-Main exposing
+MakeEven exposing
 	main
 
-main
-	4 2 + square dec
+import Basics
 
-dec
-	1 swap -
+main
+	5 makeEven square emit
+
+makeEven
+	dup `identity swap `Basics.decrement swap Basics.isEven then apply
 
 square
 	dup *
@@ -208,7 +212,11 @@ Defining new words requires less syntax than in the repl. This example contains 
 - 1 or more lines of a single tab and space separated words, literals, and operators
 - at least 1 empty line (only a newline character) between each definition
 
-There isn't any support yet for importing other modules.
+Using functions from other modules requires importing the module and then using it's exported functions fully qualified. While there's no error to catch it, cyclical imports with not work.
+
+### Bex Projects
+
+For an example Bex project, see [./fixtures/hello_project](./fixtures/hello_project). Versions listed in th `bex.json` config as well as in the path names are posix timestamps (unix time). Not sure how well this will work but it's something I've always wanted to experiment with as a versioning system.
 
 ### Running compiled Bex
 

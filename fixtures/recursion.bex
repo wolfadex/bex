@@ -2,7 +2,7 @@ Main exposing
 	main
 
 main
-	500000000000 to0 inc
+	5 to0 inc
 
 to0
 	dup `to0Helper swap `dec swap is1 then apply

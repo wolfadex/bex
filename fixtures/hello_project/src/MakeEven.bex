@@ -1,0 +1,10 @@
+MakeEven exposing
+	main
+
+import Basics
+
+main
+	5 makeEven emit
+
+makeEven
+	dup `identity swap `Basics.decrement swap Basics.isEven then apply

@@ -1,6 +1,6 @@
-module Bex.Parser exposing (parse)
+module Bex.Parser exposing (parseBody, parseModuleHeader)
 
-import Bex.Lang exposing (BExpr(..), BexModule, Definition)
+import Bex.Lang exposing (BExpr(..), BexModule, BexModulePartial, Definition)
 import List.Nonempty exposing (Nonempty)
 import Parser.Advanced as P exposing ((|.), (|=), Parser, Step(..), Token(..), Trailing(..))
 
@@ -12,6 +12,7 @@ type alias BexParser a =
 type Context
     = File String
     | Module String
+    | ModuleBodyOf String
     | ModuleBody
     | DefinitionBody
 
@@ -22,8 +23,8 @@ type Problem
     | ExpectingModuleNameStart
     | ExpectingModuleExposing
     | ExpectingDefinitionNameStart
-      -- = Expecting String
     | ExpectingInt
+      -- = Expecting String
       -- | ExpectingHex
       -- | ExpectingOctal
       -- | ExpectingBinary
@@ -32,30 +33,40 @@ type Problem
       -- | ExpectingVariable
       -- | ExpectingSymbol String
       -- | ExpectingKeyword String
-    | ExpectingModuleEnd
       -- | UnexpectedChar
-    | ExpectedChar Char
       -- | BadRepeat
+    | ExpectingModuleEnd
+    | ExpectingWord
+    | ExpectedChar Char
+    | ExpectingNewLine
+    | ExpectingKeywordImport
     | Problem String
 
 
-parse : String -> String -> Result String BexModule
-parse path =
-    P.run (P.inContext (File path) parseModule)
+
+---- PARSE MODULE HEADER ----
+
+
+parseModuleHeader : String -> String -> Result String BexModulePartial
+parseModuleHeader path =
+    P.run (P.inContext (File path) parseModulePartial)
         >> Result.mapError Debug.toString
 
 
-parseModule : BexParser BexModule
-parseModule =
+parseModulePartial : BexParser BexModulePartial
+parseModulePartial =
     parseModuleName
         |> P.andThen
             (\moduleName ->
-                P.succeed (BexModule moduleName)
+                P.succeed (BexModulePartial moduleName)
                     |. oneOrMore (char ' ')
                     |. P.keyword (Token "exposing" ExpectingModuleExposing)
                     |. char '\n'
                     |= P.inContext (Module moduleName) (oneOrMore parseExposeName)
-                    |= P.inContext (Module moduleName) (oneOrMore parseModuleBody)
+                    |. oneOrMore (char '\n')
+                    |= parseImports
+                    |= captureBody
+                    |. P.end ExpectingModuleEnd
             )
 
 
@@ -75,6 +86,57 @@ parseExposeName =
         |. char '\n'
 
 
+parseImports : BexParser (List String)
+parseImports =
+    P.loop [] parseImportsHelper
+
+
+parseImportsHelper : List String -> BexParser (Step (List String) (List String))
+parseImportsHelper reverseImports =
+    P.oneOf
+        [ P.succeed (\import_ -> Loop (import_ :: reverseImports))
+            |= parseImport
+            |. char '\n'
+        , P.succeed ()
+            |> P.map (\_ -> Done (List.reverse reverseImports))
+        ]
+
+
+parseImport : BexParser String
+parseImport =
+    P.succeed identity
+        |. P.keyword (Token "import" ExpectingKeywordImport)
+        |. P.spaces
+        |= (P.succeed ()
+                |. P.chompUntil (Token "\n" ExpectingNewLine)
+                |> P.getChompedString
+           )
+
+
+captureBody : BexParser String
+captureBody =
+    P.succeed ()
+        |. P.chompUntilEndOr "__kernel"
+        |> P.getChompedString
+
+
+
+---- PARSE MODULE BODY ----
+
+
+parseBody : String -> BexModulePartial -> Result String BexModule
+parseBody path ({ definitions } as modulePartial) =
+    definitions
+        |> P.run (P.inContext (File path) (parseModuleRemaining modulePartial))
+        |> Result.mapError Debug.toString
+
+
+parseModuleRemaining : BexModulePartial -> BexParser BexModule
+parseModuleRemaining { name, exposing_, imports } =
+    P.succeed (BexModule name exposing_ imports)
+        |= P.inContext (ModuleBodyOf name) (oneOrMore parseModuleBody)
+
+
 parseModuleBody : BexParser Definition
 parseModuleBody =
     P.succeed
@@ -83,7 +145,7 @@ parseModuleBody =
             , body = List.Nonempty.foldl1 List.Nonempty.append body
             }
         )
-        |. oneOrMore (char '\n')
+        |. many (char '\n')
         |= P.inContext ModuleBody parseDefinitionName
         |. char '\n'
         |= P.inContext ModuleBody (oneOrMore parseDefinitionBodyLine)
@@ -120,6 +182,7 @@ parseDefinitionBodyLine =
             [ char '\n'
                 |> P.map
                     (\_ -> ())
+            , P.spaces
             , P.end ExpectingModuleEnd
             ]
 
@@ -168,20 +231,23 @@ operators =
     , "*"
     , "/"
     , "="
-    ]
-
-
-builtinWords : List String
-builtinWords =
-    [ "drop"
-    , "swap"
-    , "dup"
+    , ">"
+    , ">="
+    , "<"
+    , "<="
+    , "mod"
+    , "rem"
     ]
 
 
 parseWord : BexParser BExpr
 parseWord =
-    P.map BFunc parseDefinitionName
+    -- P.map BFunc parseDefinitionName
+    P.succeed ()
+        |. P.chompIf Char.isAlpha ExpectingWord
+        |. P.chompWhile (\c -> Char.isAlphaNum c || c == '.')
+        |> P.getChompedString
+        |> P.map BFunc
 
 
 
