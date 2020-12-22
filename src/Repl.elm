@@ -1,6 +1,6 @@
 port module Repl exposing (main)
 
-import Bex exposing (BExpr, Context)
+import Bex.Repl exposing (BExpr, Context)
 import Json.Decode exposing (Decoder)
 import Json.Encode exposing (Value)
 import Platform
@@ -30,7 +30,7 @@ type alias Model =
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( { context = Bex.init }
+    ( { context = Bex.Repl.init }
     , sendToTS "PROMPT" (Json.Encode.string "> ")
     )
 
@@ -76,8 +76,8 @@ update msg model =
                     let
                         result =
                             payload
-                                |> Bex.parse
-                                |> Result.map (Bex.eval model.context)
+                                |> Bex.Repl.parse
+                                |> Result.map (Bex.Repl.eval model.context)
                     in
                     ( { model
                         | context =
@@ -86,7 +86,7 @@ update msg model =
                                 |> Result.Extra.merge
                       }
                     , result
-                        |> Result.map Bex.toString
+                        |> Result.map Bex.Repl.toString
                         |> Result.Extra.merge
                         |> (\s -> s ++ "\n> ")
                         |> Json.Encode.string

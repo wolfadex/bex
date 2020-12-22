@@ -1,19 +1,7 @@
-module Bex exposing (BExpr, Context, eval, init, parse, toString)
+module Bex.Repl exposing (BExpr, Context, eval, init, parse, toString)
 
 import Dict exposing (Dict)
-import Html.Attributes exposing (reversed)
 import Parser as P exposing ((|.), (|=), Parser, Step(..), Trailing(..))
-import Set
-
-
-type BExpr
-    = BInt Int
-    | BFunc (Int -> Int)
-    | BOper (Int -> Int -> Int)
-
-
-type Env
-    = Env (Dict String BexProgram)
 
 
 type Context
@@ -24,12 +12,23 @@ type alias InternalContext =
     { stack : Stack, env : Env }
 
 
-type alias Stack =
-    List BExpr
+type Env
+    = Env (Dict String BexProgram)
 
 
 type alias BexProgram =
     InternalContext -> InternalContext
+
+
+type alias Stack =
+    List BExpr
+
+
+type BExpr
+    = BInt Int
+    | BFunc (Int -> Int)
+    | BOper (Int -> Int -> Int)
+    | BQuote BexProgram
 
 
 init : Context
@@ -70,6 +69,9 @@ toString (Context { stack, env }) =
 
                         BOper _ ->
                             "<function>"
+
+                        BQuote _ ->
+                            "<quoted function>"
                 )
                 stack
                 |> String.join " "
@@ -79,7 +81,8 @@ toString (Context { stack, env }) =
                 |> Dict.keys
                 |> Debug.toString
     in
-    stackStr ++ "\nEnv:\n" ++ envStr
+    -- stackStr ++ "\nEnv:\n" ++ envStr
+    stackStr
 
 
 
@@ -116,16 +119,30 @@ parseProgramHelper reversePrograms =
 parseProgram : Parser BexProgram
 parseProgram =
     P.oneOf
-        [ parseBInt
-        , parseDefine
-        , parseBFunc
+        [ parseDefine
+        , maybeQuotedExpr parseBInt
+        , maybeQuotedExpr parseBFunc
         ]
+
+
+maybeQuotedExpr : Parser BexProgram -> Parser BexProgram
+maybeQuotedExpr parser =
+    P.oneOf
+        [ P.backtrackable (parseQuoted parser)
+        , parser
+        ]
+
+
+parseQuoted : Parser BexProgram -> Parser BexProgram
+parseQuoted parser =
+    P.succeed (\expr -> \({ stack } as ctx) -> { ctx | stack = BQuote expr :: stack })
+        |. P.symbol "`"
+        |= parser
 
 
 parseBInt : Parser BexProgram
 parseBInt =
     P.succeed (\i -> \({ stack } as ctx) -> { ctx | stack = BInt i :: stack })
-        -- |= P.int
         |= (P.succeed ()
                 |. P.chompWhile Char.isDigit
                 |> P.getChompedString
@@ -239,6 +256,10 @@ builtins =
         , ( "drop", dropExpr )
         , ( "swap", swapExpr )
         , ( "dup", dupExpr )
+        , ( "apply", applyExpr )
+        , ( "identity", identityExpr )
+        , ( "then", thenExpr )
+        , ( "else", elseExpr )
         ]
         |> Env
 
@@ -248,14 +269,11 @@ sumExpr ({ stack } as ctx) =
     { ctx
         | stack =
             case stack of
-                (BInt a) :: (BInt b) :: rest ->
-                    BInt (a + b) :: rest
+                (BInt right) :: (BInt left) :: rest ->
+                    BInt (left + right) :: rest
 
-                (BInt a) :: rest ->
-                    BFunc (\b -> a + b) :: rest
-
-                rest ->
-                    BOper (+) :: rest
+                _ ->
+                    stack
     }
 
 
@@ -264,14 +282,11 @@ differenceExpr ({ stack } as ctx) =
     { ctx
         | stack =
             case stack of
-                (BInt a) :: (BInt b) :: rest ->
-                    BInt (a - b) :: rest
+                (BInt right) :: (BInt left) :: rest ->
+                    BInt (left - right) :: rest
 
-                (BInt a) :: rest ->
-                    BFunc (\b -> a - b) :: rest
-
-                rest ->
-                    BOper (-) :: rest
+                _ ->
+                    stack
     }
 
 
@@ -280,14 +295,11 @@ productExpr ({ stack } as ctx) =
     { ctx
         | stack =
             case stack of
-                (BInt a) :: (BInt b) :: rest ->
-                    BInt (a * b) :: rest
+                (BInt right) :: (BInt left) :: rest ->
+                    BInt (left * right) :: rest
 
-                (BInt a) :: rest ->
-                    BFunc (\b -> a * b) :: rest
-
-                rest ->
-                    BOper (*) :: rest
+                _ ->
+                    stack
     }
 
 
@@ -296,14 +308,11 @@ divisionExpr ({ stack } as ctx) =
     { ctx
         | stack =
             case stack of
-                (BInt a) :: (BInt b) :: rest ->
-                    BInt (a // b) :: rest
+                (BInt right) :: (BInt left) :: rest ->
+                    BInt (left // right) :: rest
 
-                (BInt a) :: rest ->
-                    BFunc (\b -> a // b) :: rest
-
-                rest ->
-                    BOper (//) :: rest
+                _ ->
+                    stack
     }
 
 
@@ -344,3 +353,70 @@ dupExpr ({ stack } as ctx) =
                 [] ->
                     stack
     }
+
+
+quoteExpr : BexProgram
+quoteExpr ({ stack } as ctx) =
+    { ctx
+        | stack =
+            case stack of
+                _ ->
+                    stack
+    }
+
+
+applyExpr : BexProgram
+applyExpr ({ stack } as ctx) =
+    let
+        ( quotedFn, restStack ) =
+            case stack of
+                (BQuote fn) :: rest ->
+                    ( fn, rest )
+
+                _ ->
+                    ( identity, stack )
+    in
+    quotedFn { ctx | stack = restStack }
+
+
+thenExpr : BexProgram
+thenExpr ({ stack } as ctx) =
+    { ctx
+        | stack =
+            case stack of
+                (BInt condition) :: trueCase :: falseCase :: rest ->
+                    (if condition /= 0 then
+                        trueCase
+
+                     else
+                        falseCase
+                    )
+                        :: rest
+
+                _ ->
+                    stack
+    }
+
+
+elseExpr : BexProgram
+elseExpr ({ stack } as ctx) =
+    { ctx
+        | stack =
+            case stack of
+                (BInt condition) :: trueCase :: falseCase :: rest ->
+                    (if condition == 0 then
+                        falseCase
+
+                     else
+                        trueCase
+                    )
+                        :: rest
+
+                _ ->
+                    stack
+    }
+
+
+identityExpr : BexProgram
+identityExpr ctx =
+    ctx
