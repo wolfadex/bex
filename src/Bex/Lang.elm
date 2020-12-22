@@ -3,6 +3,7 @@ module Bex.Lang exposing
     , BexModule
     , BexModulePartial
     , Definition
+    , Target(..)
     , builtinWords
     )
 
@@ -36,6 +37,10 @@ type BExpr
     | BFunc String
     | BOper String
     | BQuote BExpr
+
+
+type Target
+    = JS
 
 
 builtinWords : List String

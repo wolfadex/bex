@@ -1,7 +1,7 @@
 port module Compiler exposing (main)
 
 import Bex.Compiler exposing (Context)
-import Bex.Lang exposing (BexModule, BexModulePartial)
+import Bex.Lang exposing (BexModule, BexModulePartial, Target(..))
 import Bex.Parser
 import Dict exposing (Dict)
 import Json.Decode exposing (Decoder)
