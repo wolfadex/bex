@@ -3,7 +3,6 @@ module Bex.Lang exposing
     , BexModule
     , BexModulePartial
     , Definition
-    , builtinWords
     )
 
 import List.Nonempty exposing (Nonempty)
@@ -33,20 +32,7 @@ type alias Definition =
 
 type BExpr
     = BInt Int
+    | BString String
     | BFunc String
     | BOper String
     | BQuote BExpr
-
-
-builtinWords : List String
-builtinWords =
-    [ "drop"
-    , "swap"
-    , "dup"
-    , "rotate"
-    , "over"
-    , "apply"
-    , "then"
-    , "emit"
-    , "identity"
-    ]

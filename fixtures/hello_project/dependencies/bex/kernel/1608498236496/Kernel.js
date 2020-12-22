@@ -142,3 +142,9 @@ function __kernel__literal_int(i) {
     return [BigInt(i), ...stack];
   };
 }
+
+function __kernel__literal_string(str) {
+  return function (stack) {
+    return [str, ...stack];
+  };
+}

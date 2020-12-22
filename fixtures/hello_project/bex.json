@@ -1,6 +1,6 @@
 {
   "type": "application",
-  "entry-file": "MakeEven",
+  "entry-file": "FirstString",
   "source-directories": ["src"],
   "bex-version": 1608498236496,
   "dependencies": {

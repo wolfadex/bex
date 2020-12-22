@@ -1,0 +1,5 @@
+FirstString exposing
+	main
+
+main
+	"hello,\n\tworld" emit

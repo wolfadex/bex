@@ -1,4 +1,4 @@
-module Bex.Compiler exposing (Context, compile)
+module Bex.Compiler exposing (Context, builtinWords, compile)
 
 import Bex.Lang as Lang exposing (BExpr(..), BexModule, BexModulePartial, Definition)
 import Dict exposing (Dict)
@@ -177,14 +177,13 @@ compileFunc : BExpr -> String
 compileFunc expr =
     case expr of
         BInt i ->
-            "__kernel__literal_int("
-                ++ String.fromInt i
-                ++ ")"
+            "__kernel__literal_int(" ++ String.fromInt i ++ ")"
+
+        BString str ->
+            "__kernel__literal_string(\"" ++ str ++ "\")"
 
         BQuote quotedExpr ->
-            "__kernel__quote("
-                ++ compileFunc quotedExpr
-                ++ ")"
+            "__kernel__quote(" ++ compileFunc quotedExpr ++ ")"
 
         BOper op ->
             case op of
@@ -274,7 +273,7 @@ qualifyName envDefinitions moduleName definitions expr =
     case expr of
         BFunc wd ->
             BFunc <|
-                if List.member wd Lang.builtinWords then
+                if List.member wd builtinWords then
                     "__kernel__" ++ wd
 
                 else if memberBy (\d -> d.name == wd) definitions then
@@ -364,3 +363,17 @@ memberByHelper fn ls =
 
         a :: rest ->
             fn a || memberByHelper fn rest
+
+
+builtinWords : List String
+builtinWords =
+    [ "drop"
+    , "swap"
+    , "dup"
+    , "rotate"
+    , "over"
+    , "apply"
+    , "then"
+    , "emit"
+    , "identity"
+    ]

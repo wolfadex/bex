@@ -37,6 +37,7 @@ type Problem
       -- | BadRepeat
     | ExpectingModuleEnd
     | ExpectingWord
+    | ExpectedStringEndDoubleQuote
     | ExpectedChar Char
     | ExpectingNewLine
     | ExpectingKeywordImport
@@ -164,6 +165,7 @@ parseDefinitionBodyLine =
     P.succeed identity
         |. char '\t'
         |= ([ parseBInt
+            , parseBString
             , operators
                 |> List.map parseOperator
                 |> P.oneOf
@@ -216,6 +218,17 @@ parseBInt =
                     Nothing ->
                         P.problem ExpectingInt
             )
+
+
+parseBString : BexParser BExpr
+parseBString =
+    P.succeed BString
+        |. char '"'
+        |= (P.succeed ()
+                |. P.chompUntil (Token "\"" ExpectedStringEndDoubleQuote)
+                |> P.getChompedString
+           )
+        |. char '"'
 
 
 parseOperator : String -> BexParser BExpr
