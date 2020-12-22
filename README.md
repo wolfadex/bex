@@ -41,7 +41,7 @@ The syntax is:
 | then                      | Used like `if` in most contemporary languages. Because Bex compiles to JS this uses JS's truthiness to determine truthiness.                                                                                                                             |
 | else                      | Used like `if` in most contemporary languages, but with the truthiness reversed. Use when you want the opposite behavior of `then`.                                                                                                                      |
 | def **_name_** **_body_** | Define your own functions. The **_name_** must be an alpha character followed by any number of alphanumeric characters. The **_body_** is a space separated list of other functions. The definition ends at a newline character or the end of the input. |
-| emit                      | Prints, using JS's `console.log`, the top value of the stack without modifying the stack.                                                                                                                                                                |
+| emit                      | Prints, using JS's `console.log`, the top value of the stack without modifying the stack. (Not used in the repl because the repl displays the stack.)                                                                                                    |
 
 #### Examples of using `def`
 
